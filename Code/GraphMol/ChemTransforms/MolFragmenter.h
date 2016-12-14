@@ -94,6 +94,12 @@ void constructFragmenterBondTypes(
     std::vector<FragmenterBondType> &defs, const std::string &comment = "//",
     bool validate = true, bool labelByConnector = true);
 void constructBRICSBondTypes(std::vector<FragmenterBondType> &defs);
+
+//! \brief Fragments a molecule using the Fraggle algorithm
+/*!
+  \return a list of ROMol fragments.
+*/
+std::vector<ROMOL_SPTR> getFraggleFragments(const ROMol &mol);
 }
 }
 #endif

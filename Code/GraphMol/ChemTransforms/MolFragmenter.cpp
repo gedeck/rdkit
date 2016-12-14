@@ -542,4 +542,17 @@ ROMol *fragmentOnBRICSBonds(const ROMol &mol) {
 }
 
 }  // end of namespace MolFragmenter
+
+// Fraggle code
+namespace MolFragmenter {
+std::vector<ROMOL_SPTR> getFraggleFragments(const ROMol &mol) {
+  std::vector<ROMOL_SPTR> res;
+  unsigned int natoms = mol.getNumHeavyAtoms();
+
+  for (int i = 0; i < natoms; ++i) {
+    res.push_back(ROMOL_SPTR(new ROMol(mol, false)));
+  }
+  return res;
+}
+}  // end of namespace MolFragmenter
 }  // end of namespace RDKit
