@@ -17,6 +17,32 @@
 #include <Numerics/Alignment/AlignPoints.h>
 #include <GraphMol/MolTransforms/MolTransforms.h>
 
+/*
+ * since there’s no “ignore hs while matching” argument, I would copy both
+ * molecules, remove the Hs, find the best RMS, and then use the transform from
+ * that alignment to transform the original molecule
+ */
+
+template <class T, class U>
+std::vector<std::vector<U> > ConvertVectVect(T vectvect) {
+  std::vector<std::vector<U> > vect;
+  size_t size = python::extract<unsigned int>(vectvect.attr("__len__")());
+  vect.resize(size);
+  for (size_t i = 0; i < size; ++i) {
+    unsigned int len1 =
+        python::extract<unsigned int>(vectvect[i].attr("__len__")());
+    std::vector<U> &v = vect[i];
+    v.reserve(len1);
+    for (unsigned int j = 0; j < len1; ++j) {
+      U u = python::extract<U>(vectvect[i][j]);
+      v.push_back(u);
+    }
+  }
+  return vect;
+}
+// std::vector<MatchVectType> atomMaps = ConvertVectVec<python::list,
+// MatchType>(maps);
+
 namespace RDKit {
 namespace MolAlign {
 
