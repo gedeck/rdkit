@@ -41,7 +41,7 @@ double getConformerRMS(ROMol &mol, unsigned int confId1, unsigned int confId2,
                        const std::vector<unsigned int> *atomIds = NULL,
                        bool prealigned = false);
 
-//! Compute the optimal RMSE between two molecules
+//! Compute the optimal RMSD between two molecules
 /*!
   Returns the optimal RMS for aligning two molecules, taking
   symmetry into account. As a side-effect, the probe molecule is

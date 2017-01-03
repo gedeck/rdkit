@@ -1,7 +1,27 @@
-# Namespace MolAlign
+# Alignment code
 
-## Public functions/classes:
+## Requirements
+* Atoms considered:
+  * All atoms
+  * Heavy atoms only
+* Atom matching:
+  * User defined (std::vector<MatchVectType> or MatchVectType)
+  * Single substructure match (MatchVectType)
+  * Multiple substruture matches ( std::vector<MatchVectType>)
+* Alignments (ref <-> prb):
+  * Conformer <-> Conformer
+  * Conformer <-> All/range conformers
 
+## Relevant functions in other namespaces
+* AlignPoints (RDNumeric::Alignments)
+  * Compute an optimal alignment (minimum sum of squared distance) between two sets of points in 3D
+  * Returns SSR (RMSE = sqrt(SSR/NUMPOINTS) and transformation matrix (trans)
+* MolTransforms::transformConformer
+  * Transform the conformation using the specified transformation
+void transformConformer(RDKit::Conformer &conf,
+
+
+## Namespace MolAlign
 * class MolAlignException
 * getAlignmentTransform: 
   * Compute the transformation required to align two molecules, probe (fixed) and reference (changed).
@@ -18,7 +38,7 @@
 * getBestRMS:
   * Compute the optimal RMSD between two molecules
 
-## Open3Dalign
+# Open3Dalign
 * O3AFuncData:
   * Data structure that contains configuration options
 * O3AConstraint:

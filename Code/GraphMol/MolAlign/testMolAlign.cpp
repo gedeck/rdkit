@@ -30,6 +30,110 @@
 
 using namespace RDKit;
 
+void test_getSubstructureAtomMapping() {
+  ROMol *refMol = SmilesToMol("CNC", 0, 1);
+  ROMol *prbMol = SmilesToMol("CN", 0, 1);
+  std::vector<MatchVectType> matches;
+  MolAlign::AlignmentParameters alignPara;
+  alignPara.enumerateAll = false;
+  MolAlign::getSubstructureAtomMapping(*refMol, *prbMol, matches, alignPara);
+  TEST_ASSERT(matches.size() == 1)
+  alignPara.enumerateAll = true;
+  MolAlign::getSubstructureAtomMapping(*refMol, *prbMol, matches, alignPara);
+  TEST_ASSERT(matches.size() == 2)
+
+  // Now add the hydrogens and see the mapping explode
+  ROMol *refMolH = MolOps::addHs(*refMol, false, true);
+  ROMol *prbMolH = MolOps::addHs(*prbMol, false, true);
+  alignPara.enumerateAll = false;
+  MolAlign::getSubstructureAtomMapping(*refMolH, *prbMolH, matches, alignPara);
+  TEST_ASSERT(matches.size() == 1)
+  alignPara.enumerateAll = true;
+  MolAlign::getSubstructureAtomMapping(*refMolH, *prbMolH, matches, alignPara);
+  TEST_ASSERT(matches.size() == 0)
+  alignPara.enumerateAll = false;
+  MolAlign::getSubstructureAtomMapping(*refMolH, *refMolH, matches, alignPara);
+  TEST_ASSERT(matches.size() == 1)
+  alignPara.enumerateAll = true;
+  MolAlign::getSubstructureAtomMapping(*refMolH, *refMolH, matches, alignPara);
+  TEST_ASSERT(matches.size() == 72)
+
+  delete refMol;
+  delete prbMol;
+  delete refMolH;
+  delete prbMolH;
+}
+
+void test_getAtomMappings() {
+  std::vector<MatchVectType> matches;
+  bool enumerateAll, ignoreH;
+  RWMol *refMol = SmilesToMol("CNC", 0, 1);
+  RWMol *prbMol = SmilesToMol("CN", 0, 1);
+  MolOps::addHs(*refMol, false, true);
+  MolOps::addHs(*prbMol, false, true);
+
+  MolAlign::AlignmentParameters alignPara;
+
+  // Auto-generation of all mappings based on substructure mappings
+  alignPara.enumerateAll = true;
+  enumerateAll = true;
+
+  // We consider all atoms - for different molecules, this will create zero
+  // matches
+  alignPara.ignoreHydrogens = false;
+  ignoreH = false;
+  MolAlign::getAtomMappings(*refMol, *prbMol, matches, alignPara);
+  TEST_ASSERT(refMol->getNumAtoms() == 10);
+  TEST_ASSERT(matches.size() == 0);
+
+  MolAlign::getAtomMappings(*refMol, *refMol, matches, alignPara);
+  TEST_ASSERT(refMol->getNumAtoms() == 10);
+  TEST_ASSERT(matches.size() == 72);
+
+  // We consider heavy atoms only
+  alignPara.ignoreHydrogens = true;
+  MolAlign::getAtomMappings(*refMol, *prbMol, matches, alignPara);
+  TEST_ASSERT(refMol->getNumAtoms() == 3);
+  TEST_ASSERT(prbMol->getNumAtoms() == 2);
+  TEST_ASSERT(matches.size() == 2);
+
+  MolAlign::getAtomMappings(*refMol, *refMol, matches, alignPara);
+  TEST_ASSERT(matches.size() == 2);
+  delete refMol;
+  delete prbMol;
+
+  // Check with user defined atom mapping
+  refMol = SmilesToMol("CNC", 0, 1);
+  prbMol = SmilesToMol("CN", 0, 1);
+  MolOps::addHs(*refMol, false, true);
+  MolOps::addHs(*prbMol, false, true);
+
+  MatchVectType userAtomMap;
+  userAtomMap.resize(4);
+  userAtomMap[0] = std::pair<int, int>(0, 1);  // heavy-heavy
+  userAtomMap[1] = std::pair<int, int>(0, 4);  // heavy-H
+  userAtomMap[2] = std::pair<int, int>(5, 0);  // H-heavy
+  userAtomMap[3] = std::pair<int, int>(4, 6);  // H-H
+
+  alignPara.atomMap = &userAtomMap;
+  alignPara.ignoreHydrogens = false;
+  MolAlign::getAtomMappings(*refMol, *prbMol, matches, alignPara);
+  TEST_ASSERT(refMol->getNumAtoms() == 10);
+  TEST_ASSERT(prbMol->getNumAtoms() == 7);
+  TEST_ASSERT(matches.size() == 1);
+  TEST_ASSERT(matches[0] == userAtomMap);
+  TEST_ASSERT(matches[0].size() == 4);
+
+  alignPara.ignoreHydrogens = true;
+  MolAlign::getAtomMappings(*refMol, *prbMol, matches, alignPara);
+  TEST_ASSERT(refMol->getNumAtoms() == 3);
+  TEST_ASSERT(prbMol->getNumAtoms() == 2);
+  // We only keep matches that involve heavy atoms
+  TEST_ASSERT(matches.size() == 1);
+  TEST_ASSERT(matches[0].size() == 1)
+  TEST_ASSERT(matches[0][0] == userAtomMap[0]);
+}
+
 void test1AlignMetrics() {
   // Create two conformations
   ROMol *mol = SmilesToMol("CNc(n2)nc(C)cc2Nc(cc34)ccc3[nH]nc4", 0, 1);
@@ -41,7 +145,7 @@ void test1AlignMetrics() {
   double rmsAlign = MolAlign::getConformerRMS(*mol, 0, 1);
   TEST_ASSERT(rmsNoAlign > rmsAlign);
 
-  POSTCONDITION(false, "Code in development - do not merge into master");
+  delete mol;
 }
 
 void test1MolAlign() {
@@ -900,6 +1004,14 @@ int main() {
   std::cout << "Testing MolAlign\n";
 
   std::cout << "\t---------------------------------\n";
+  std::cout << "\t test_getSubstructureAtomMapping \n\n";
+  test_getSubstructureAtomMapping();
+
+  std::cout << "\t---------------------------------\n";
+  std::cout << "\t test_getAtomMappings \n\n";
+  test_getAtomMappings();
+
+  std::cout << "\t---------------------------------\n";
   std::cout << "\t test1AlignMetrics \n\n";
   test1AlignMetrics();
 
@@ -922,6 +1034,8 @@ int main() {
   std::cout << "\t---------------------------------\n";
   std::cout << "\t testIssue241 \n\n";
   testIssue241();
+
+  POSTCONDITION(false, "Code in development - do not merge into master");
 
   std::cout << "\t---------------------------------\n";
   std::cout << "\t testMMFFO3A \n\n";

@@ -465,10 +465,8 @@ def AssignBondOrdersFromTemplate(refmol, mol):
     else the algorithm will fail.
 
     It also works if there are different formal charges (this was github issue 235):
-    >>> template=AllChem.MolFromSmiles(
-    ...     'CN(C)C(=O)Cc1ccc2c(c1)NC(=O)c3ccc(cc3N2)c4ccc(c(c4)OC)[N+](=O)[O-]')
-    >>> mol = AllChem.MolFromMolFile(os.path.join(RDConfig.RDCodeDir, 'Chem',
-    ...     'test_data', '4FTR_lig.mol'))
+    >>> template=AllChem.MolFromSmiles('CN(C)C(=O)Cc1ccc2c(c1)NC(=O)c3ccc(cc3N2)c4ccc(c(c4)OC)[N+](=O)[O-]')
+    >>> mol = AllChem.MolFromMolFile(os.path.join(RDConfig.RDCodeDir, 'Chem', 'test_data', '4FTR_lig.mol'))
     >>> AllChem.MolToSmiles(mol)
     'COC1CC(C2CCC3C(O)NC4CC(CC(O)N(C)C)CCC4NC3C2)CCC1N(O)O'
     >>> newMol = AllChem.AssignBondOrdersFromTemplate(template, mol)

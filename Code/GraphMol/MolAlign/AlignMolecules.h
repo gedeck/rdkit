@@ -19,6 +19,7 @@ typedef std::vector<std::pair<int, int> > MatchVectType;
 
 class Conformer;
 class ROMol;
+class RWMol;
 namespace MolAlign {
 class MolAlignException : public std::exception {
  public:
@@ -32,6 +33,52 @@ class MolAlignException : public std::exception {
 
  private:
   std::string _msg;
+};
+
+//! Parameter object for controlling molecule alignments
+/*!
+  findBestAtomMap Try all atom maps and use the mapping with the smallest RMSD
+                  for the alignment
+  ignoreHydrogens Include hydrogens in substructure atom mapping
+  enumerateAll    Enumerate all substructure mappings
+  atomMap         A vector of pairs of atom IDs (probe AtomId, ref AtomId)
+                  used to compute the alignments. If this mapping is
+                  not specified an attempt is made to generate one by
+                  substructure matching
+
+  weights         Optionally specify weights for each of the atom pairs
+  reflect         If true reflect the conformation of the probe molecule
+  maxIterations   Maximum number of iteration used in minimizing the RMSD
+
+  refConformerID   ID of reference conformer (default -1, to consider the first)
+  prbConformerID   ID of probe conformer (default -1, to consider the first)
+  refAllConformers Use all conformers of reference to find the best alignment
+  prbAllConformers Use all conformers of probe to find the best alignment
+*/
+struct AlignmentParameters {
+  bool findBestAtomMap;
+  bool ignoreHydrogens;
+  bool enumerateAll;
+  const MatchVectType *atomMap;
+  const RDNumeric::DoubleVector *weights;
+  bool reflect;
+  unsigned int maxIterations;
+  int refConformerID;
+  int prbConformerID;
+  bool refAllConformers;
+  bool prbAllConformers;
+  AlignmentParameters()
+      : findBestAtomMap(false),
+        ignoreHydrogens(false),
+        enumerateAll(false),
+        atomMap(NULL),
+        weights(NULL),
+        reflect(false),
+        maxIterations(50),
+        refConformerID(-1),
+        prbConformerID(-1),
+        refAllConformers(false),
+        prbAllConformers(false){};
 };
 
 //! Alignment functions
@@ -122,6 +169,40 @@ void alignMolConformers(ROMol &mol,
                         const RDNumeric::DoubleVector *weights = 0,
                         bool reflect = false, unsigned int maxIters = 50,
                         std::vector<double> *RMSlist = 0);
-}
+
+// private functions
+
+//! Create one or more mappings between the two molecules. prbMol can be a
+//! substructure of refMol.
+
+/*!
+   \param refMol
+   \param prbMol
+   \param atomMaps
+   \param alignParameter
+ */
+void getSubstructureAtomMapping(const ROMol &refMol, const ROMol &prbMol,
+                                std::vector<MatchVectType> &atomMaps,
+                                const AlignmentParameters &alignParameter);
+
+void getAtomMappings(RWMol &refMol, RWMol &prbMol,
+                     std::vector<MatchVectType> &atomMaps,
+                     const AlignmentParameters &alignParameter);
+
+double getAlignmentTransform(const ROMol &prbMol, const ROMol &refMol,
+                             RDGeom::Transform3D &trans,
+                             const AlignmentParameters &alignParameter);
+
+double alignMol(ROMol &prbMol, const ROMol &refMol,
+                const AlignmentParameters &alignParameter, int prbCid = -1,
+                int refCid = -1);
+
+// void alignMolConformers(
+//    ROMol &mol, const std::vector<unsigned int> *atomIds = NULL,
+//    const std::vector<unsigned int> *confIds = NULL,
+//    const AlignmentParameters &alignParameter = AlignmentParameters(),
+//    std::vector<double> *RMSlist = NULL);
+
+}  // end namespace MolAlign
 }
 #endif

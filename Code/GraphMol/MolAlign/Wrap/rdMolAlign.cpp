@@ -601,6 +601,32 @@ BOOST_PYTHON_MODULE(rdMolAlign) {
   python::scope().attr("__doc__") =
       "Module containing functions to align a molecule to a second molecule";
 
+  python::class_<RDKit::MolAlign::AlignmentParameters, boost::noncopyable>(
+      "AlignmentParameters", "Parameters controlling molecule alignments")
+      .def_readwrite("findBestAtomMap",
+                     &RDKit::MolAlign::AlignmentParameters::findBestAtomMap,
+                     "Try all atom maps and use the mapping with the smallest "
+                     "RMSD for the alignment (default False)")
+      .def_readwrite(
+          "ignoreHydrogens",
+          &RDKit::MolAlign::AlignmentParameters::ignoreHydrogens,
+          "Include hydrogens in substructure atom mapping (default False)")
+      .def_readwrite("enumerateAll",
+                     &RDKit::MolAlign::AlignmentParameters::enumerateAll,
+                     "Enumerate all substructure mappings (default False)")
+      .def_readwrite("atomMap", &RDKit::MolAlign::AlignmentParameters::atomMap,
+                     "A vector of pairs of atom IDs (probe AtomId, ref AtomId) "
+                     "used to compute the alignments. If this mapping is not "
+                     "specified (default) an attempt is made to generate one "
+                     "by substructure matching")
+      .def_readwrite("weights", &RDKit::MolAlign::AlignmentParameters::atomMap,
+                     "Optionally specify weights for each of the atom pairs")
+      .def_readwrite("reflect", &RDKit::MolAlign::AlignmentParameters::reflect,
+                     "If true reflect the conformation of the probe molecule")
+      .def_readwrite("maxIterations",
+                     &RDKit::MolAlign::AlignmentParameters::maxIterations,
+                     "Maximum number of iteration used in minimizing the RMSD");
+
   std::string docString =
       "Compute the transformation required to align a molecule\n\
      \n\
