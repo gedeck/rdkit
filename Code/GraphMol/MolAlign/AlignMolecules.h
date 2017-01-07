@@ -15,12 +15,20 @@
 #include <vector>
 
 namespace RDKit {
-typedef std::vector<std::pair<int, int> > MatchVectType;
-
 class Conformer;
 class ROMol;
 class RWMol;
+
+typedef std::vector<std::pair<int, int> > MatchVectType;
+
+// Utility function for debug output
+std::ostream &operator<<(std::ostream &os, const MatchVectType &map);
+std::ostream &operator<<(std::ostream &os,
+                         const std::vector<MatchVectType> &maps);
 namespace MolAlign {
+
+void printVector(std::ostream &os, const std::vector<unsigned int> &idx);
+
 class MolAlignException : public std::exception {
  public:
   //! construct with an error message
@@ -41,7 +49,7 @@ class MolAlignException : public std::exception {
                   for the alignment
   ignoreHydrogens Include hydrogens in substructure atom mapping
   enumerateAll    Enumerate all substructure mappings
-  atomMap         A vector of pairs of atom IDs (probe AtomId, ref AtomId)
+  atomMap         A vector of pairs of atom IDs (probe AtomId, reference AtomId)
                   used to compute the alignments. If this mapping is
                   not specified an attempt is made to generate one by
                   substructure matching
@@ -81,8 +89,52 @@ struct AlignmentParameters {
         prbAllConformers(false){};
 };
 
+std::ostream &operator<<(std::ostream &os, const AlignmentParameters &param);
+
+/*
+ * New API (uses AlignmentParameters)
+ */
+
 //! Alignment functions
 
+//! Optimally (minimum RMSD) align a molecule to another molecule
+/*!
+  The 3D transformation required to align the specified conformation (default
+  first) in the probe molecule to a specified conformation in the reference
+  molecule is computed so that the root mean squared distance between a
+  specified set of atoms is minimized. This transforms is them applied to the
+  specified conformation (default first) in the probe molecule.
+
+  \param prbMol          molecule that is to be aligned
+  \param refMol          molecule used as the reference for the alignment
+  \param alignParameter  control parameter for alignment process
+
+  <b>Returns</b>
+  RMSD value
+*/
+double alignMol(ROMol &prbMol, const ROMol &refMol,
+                const AlignmentParameters &alignParameter);
+
+//! Align the conformations of a molecule using a common set of atoms. If
+// the molecules contains queries, then the queries must also match exactly.
+/*!
+  \param mol                 the molecule of interest.
+  \param alignmentParameter  control parameter for alignment process
+  \param atomIds             vector of atoms to be used to generate the
+                             alignment - defaults to all
+  \param confIds             vector of conformations to align - defaults to all
+  \param RMSlist             if nonzero, this will be used to return the RMS
+                             values between the reference conformation and the
+                             other aligned conformations
+*/
+void alignMolConformers(ROMol &mol, const AlignmentParameters &alignParameter,
+                        const std::vector<unsigned int> *atomIds = NULL,
+                        const std::vector<unsigned int> *confIds = NULL,
+                        std::vector<double> *RMSlist = 0);
+
+/*
+ * Old API
+ */
 //! Compute the transformation required to align a molecule
 /*!
   The 3D transformation required to align the specied conformation in the probe
@@ -149,7 +201,6 @@ double alignMol(ROMol &prbMol, const ROMol &refMol, int prbCid = -1,
 
 //! Align the conformations of a molecule using a common set of atoms. If
 // the molecules contains queries, then the queries must also match exactly.
-
 /*!
   \param mol       The molecule of interest.
   \param atomIds   vector of atoms to be used to generate the alignment.
@@ -174,7 +225,6 @@ void alignMolConformers(ROMol &mol,
 
 //! Create one or more mappings between the two molecules. prbMol can be a
 //! substructure of refMol.
-
 /*!
    \param refMol
    \param prbMol
@@ -192,10 +242,6 @@ void getAtomMappings(RWMol &refMol, RWMol &prbMol,
 double getAlignmentTransform(const ROMol &prbMol, const ROMol &refMol,
                              RDGeom::Transform3D &trans,
                              const AlignmentParameters &alignParameter);
-
-double alignMol(ROMol &prbMol, const ROMol &refMol,
-                const AlignmentParameters &alignParameter, int prbCid = -1,
-                int refCid = -1);
 
 // void alignMolConformers(
 //    ROMol &mol, const std::vector<unsigned int> *atomIds = NULL,

@@ -18,12 +18,64 @@
 #include <GraphMol/MolTransforms/MolTransforms.h>
 #include <GraphMol/RDKitBase.h>
 
-// configuration options
-// https://github.com/rdkit/rdkit/blob/master/Code/GraphMol/DistGeomHelpers/Embedder.h#L298
-// https://github.com/rdkit/rdkit/blob/master/Code/GraphMol/DistGeomHelpers/Wrap/rdDistGeom.cpp#L262
-
 namespace RDKit {
 namespace MolAlign {
+
+// New API (uses AlignmentParameters)
+double alignMol(ROMol &prbMol, const ROMol &refMol,
+                const AlignmentParameters &alignParameter) {
+  //  alignMolConformers(prbMol, alignParameter);
+  RDGeom::Transform3D trans;
+  double rmsd = getAlignmentTransform(prbMol, refMol, trans, alignParameter);
+
+  // now transform the relevant conformation on prbMol
+  Conformer &conf = prbMol.getConformer(alignParameter.prbConformerID);
+  MolTransforms::transformConformer(conf, trans);
+  return rmsd;
+}
+
+void alignMolConformers(ROMol &mol, const AlignmentParameters &alignParameter,
+                        const std::vector<unsigned int> *atomIds,
+                        const std::vector<unsigned int> *confIds,
+                        std::vector<double> *RMSlist) {
+  AlignmentParameters cAlignParameter = AlignmentParameters(alignParameter);
+  cAlignParameter.enumerateAll = false;
+  if (atomIds) {
+    MatchVectType atomMap;
+    BOOST_FOREACH (int atomId, *atomIds) {
+      atomMap.push_back(std::pair<int, int>(atomId, atomId));
+    }
+    cAlignParameter.atomMap = &atomMap;
+  }
+  //  std::cout << '\n' << cAlignParameter;
+
+  // Create list of confIds if missing
+  std::vector<unsigned int> cConfIds;
+  if (confIds) {
+    cConfIds = *confIds;
+  } else {
+    for (unsigned int i = 0; i < mol.getNumConformers(); i++) {
+      cConfIds.push_back(i);
+    }
+  }
+  //  std::cout << "Conformations: ";
+  //  printVector(std::cout, cConfIds);
+  //  std::cout << '\n';
+  cAlignParameter.refConformerID = cConfIds[0];
+  BOOST_FOREACH (int confId, cConfIds) {
+    //    std::cout << "Align conformation " << confId;
+    if (confId == cAlignParameter.refConformerID) {
+      //      std::cout << "skipped\n";
+      continue;
+    }
+    cAlignParameter.prbConformerID = confId;
+    double rmsd = alignMol(mol, mol, cAlignParameter);
+    if (RMSlist) {
+      RMSlist->push_back(rmsd);
+    }
+    //    std::cout << "aligned" << rmsd << "\n";
+  }
+}
 
 void _getHeavyIndices(const ROMol &mol, std::set<int> &hAtoms) {
   for (ROMol::ConstAtomIterator atomIt = mol.beginAtoms();
@@ -37,8 +89,6 @@ void _getHeavyIndices(const ROMol &mol, std::set<int> &hAtoms) {
 void getAtomMappings(RWMol &refMol, RWMol &prbMol,
                      std::vector<MatchVectType> &atomMaps,
                      const AlignmentParameters &alignParameter) {
-  //					 bool enumerateAll,
-  //                     bool ignoreH, const MatchVectType *userAtomMap) {
   atomMaps.clear();
   if (alignParameter.atomMap) {
     atomMaps.resize(1);
@@ -118,22 +168,27 @@ double getAlignmentTransform(const ROMol &prbMol, const ROMol &refMol,
                              RDGeom::Transform3D &trans,
                              const AlignmentParameters &alignParameter) {
   // Create a vector of possible atom mappings
+  //  std::cout << alignParameter << '\n';
   std::vector<MatchVectType> atomMaps;
   RWMol cRefMol = RWMol(refMol);
   RWMol cPrbMol = RWMol(prbMol);
   getAtomMappings(cRefMol, cPrbMol, atomMaps, alignParameter);
+  //  std::cout << "Number of atom maps : " << atomMaps.size() << '\n';
+  //  std::cout << atomMaps;
 
   // Select on atom mapping
   double rmsd;
   if (alignParameter.findBestAtomMap) {
     MatchVectType bestMap;
     bool bestAtLast = false;
+    rmsd = 1000000.0;
     BOOST_FOREACH (const MatchVectType &atomMap, atomMaps) {
       double rms = getAlignmentTransform(
           cPrbMol, cRefMol, trans, alignParameter.prbConformerID,
           alignParameter.refConformerID, atomMap, alignParameter);
       bestAtLast = false;
       if (rms < rmsd) {
+        //        std::cout << rms << " " << rmsd << '\n';
         rmsd = rms;
         bestMap = atomMap;
         bestAtLast = true;
@@ -152,17 +207,6 @@ double getAlignmentTransform(const ROMol &prbMol, const ROMol &refMol,
   return rmsd;
 }
 
-double alignMol(ROMol &prbMol, const ROMol &refMol,
-                const AlignmentParameters &alignParameter) {
-  RDGeom::Transform3D trans;
-  double rmsd = getAlignmentTransform(prbMol, refMol, trans, alignParameter);
-
-  // now transform the relevant conformation on prbMol
-  Conformer &conf = prbMol.getConformer(prbCid);
-  MolTransforms::transformConformer(conf, trans);
-  return rmsd;
-}
-
 double getAlignmentTransform(const ROMol &prbMol, const ROMol &refMol,
                              RDGeom::Transform3D &trans, int prbCid, int refCid,
                              const MatchVectType *atomMap,
@@ -175,8 +219,9 @@ double getAlignmentTransform(const ROMol &prbMol, const ROMol &refMol,
   alignPara.weights = weights;
   alignPara.reflect = reflect;
   alignPara.maxIterations = maxIterations;
-  return getAlignmentTransform(prbMol, refMol, trans, alignPara, prbCid,
-                               refCid);
+  alignPara.prbConformerID = prbCid;
+  alignPara.refConformerID = refCid;
+  return getAlignmentTransform(prbMol, refMol, trans, alignPara);
 }
 
 double alignMol(ROMol &prbMol, const ROMol &refMol, int prbCid, int refCid,
@@ -190,7 +235,9 @@ double alignMol(ROMol &prbMol, const ROMol &refMol, int prbCid, int refCid,
   alignPara.weights = weights;
   alignPara.reflect = reflect;
   alignPara.maxIterations = maxIterations;
-  return alignMol(prbMol, refMol, alignPara, prbCid, refCid);
+  alignPara.prbConformerID = prbCid;
+  alignPara.refConformerID = refCid;
+  return alignMol(prbMol, refMol, alignPara);
 }
 
 void _fillAtomPositions(RDGeom::Point3DConstPtrVect &pts, const Conformer &conf,
@@ -216,6 +263,25 @@ void alignMolConformers(ROMol &mol, const std::vector<unsigned int> *atomIds,
                         const std::vector<unsigned int> *confIds,
                         const RDNumeric::DoubleVector *weights, bool reflect,
                         unsigned int maxIters, std::vector<double> *RMSlist) {
+  if (mol.getNumConformers() == 0) {
+    // nothing to be done ;
+    return;
+  }
+  AlignmentParameters alignPara;
+  alignPara.ignoreHydrogens = false;
+  alignPara.enumerateAll = false;
+  alignPara.atomMap = NULL;
+  alignPara.weights = weights;
+  alignPara.reflect = reflect;
+  alignPara.maxIterations = maxIters;
+  alignMolConformers(mol, alignPara, atomIds, confIds, RMSlist);
+}
+
+void alignMolConformersOld(ROMol &mol, const std::vector<unsigned int> *atomIds,
+                           const std::vector<unsigned int> *confIds,
+                           const RDNumeric::DoubleVector *weights, bool reflect,
+                           unsigned int maxIters,
+                           std::vector<double> *RMSlist) {
   if (mol.getNumConformers() == 0) {
     // nothing to be done ;
     return;
@@ -252,7 +318,6 @@ void alignMolConformers(ROMol &mol, const std::vector<unsigned int> *atomIds,
       MolTransforms::transformConformer(*(*cnfi), trans);
     }
   } else {
-    1 / 0;
     std::vector<unsigned int>::const_iterator cai;
     unsigned int i = 0;
     for (cai = confIds->begin(); cai != confIds->end(); cai++) {
@@ -272,5 +337,37 @@ void alignMolConformers(ROMol &mol, const std::vector<unsigned int> *atomIds,
     }
   }
 }
+
+std::ostream &operator<<(std::ostream &os, const MatchVectType &map) {
+  for (MatchVectType::const_iterator elem = map.begin(); elem != map.end();
+       ++elem) {
+    os << elem->first << '/' << elem->second << ' ';
+  }
+  os << '\n';
+  return os;
+}
+
+std::ostream &operator<<(std::ostream &os,
+                         const std::vector<MatchVectType> &maps) {
+  BOOST_FOREACH (const MatchVectType &map, maps) { os << map; }
+  return os;
+}
+
+void printVector(std::ostream &os, const std::vector<unsigned int> &idx) {
+  BOOST_FOREACH (const unsigned int &id, idx) { os << id << ' '; }
+}
+
+std::ostream &operator<<(std::ostream &os, const AlignmentParameters &param) {
+  os << "Alignment parameter\n";
+  os << " findBestAtomMap " << param.findBestAtomMap << '\n';
+  os << " ignoreHydrogens " << param.ignoreHydrogens << '\n';
+  if (param.atomMap) {
+    os << " atomMap " << *(param.atomMap);
+  } else {
+    os << " atomMap not defined\n";
+  }
+  return os;
+}
+
 }  // end namespace MolAlign
 }

@@ -63,9 +63,9 @@ double getConformerRMS(ROMol &mol, unsigned int confId1, unsigned int confId2,
   atom order.
   """
 */
-double getBestRMS(const ROMol &refMol, ROMol &prbMol, int probeConfId = -1,
-                  int refConfId = -1, bool includeHydrogens = false,
-                  std::vector<MatchVectType> *atomMaps = NULL);
+double getBestRMS2(const ROMol &refMol, ROMol &prbMol, int probeConfId = -1,
+                   int refConfId = -1, bool includeHydrogens = false,
+                   std::vector<MatchVectType> *atomMaps = NULL);
 }
 }
 #endif

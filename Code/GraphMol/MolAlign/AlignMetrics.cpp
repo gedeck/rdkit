@@ -70,8 +70,9 @@ double getConformerRMS(ROMol &mol, unsigned int confId1, unsigned int confId2,
   return sqrt(ssr);
 }
 
-double getBestRMS(const ROMol &refMol, ROMol &prbMol, int refCid, int prbCid,
-                  bool includeHydrogens, std::vector<MatchVectType> *atomMaps) {
+double getBestRMS2(const ROMol &refMol, ROMol &prbMol, int refCid, int prbCid,
+                   bool includeHydrogens,
+                   std::vector<MatchVectType> *atomMaps) {
   RDGeom::Point3DConstPtrVect refPoints, prbPoints;
 
   if (!atomMaps || atomMaps->size() == 0) {

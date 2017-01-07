@@ -49,21 +49,89 @@ class TestCase(unittest.TestCase):
     m2.AddConformer(m1.GetConformer(id=1))
 
     # test that the prealigned flag is working
+    self.assertAlmostEqual(AllChem.GetConformerRMS(m1, 0, 1, prealigned=True),
+                           AllChem.pyGetConformerRMS(m1, 0, 1, prealigned=True))
     rms1 = AllChem.GetConformerRMS(m1, 0, 1, prealigned=True)
     rms2 = AllChem.GetConformerRMS(m1, 0, 1, prealigned=False)
-    self.assertTrue((rms1 > rms2))
+    self.assertTrue(rms1 > rms2)
+    self.assertAlmostEqual(AllChem.GetConformerRMS(m1, 0, 1, prealigned=False),
+                           AllChem.pyGetConformerRMS(m1, 0, 1, prealigned=False))
 
     # test that RMS is the same as calculated by AlignMol()
-    AllChem.GetBestRMS(m2, m1, 1, 0)
+#     AllChem.GetBestRMS(m2, m1, 1, 0)
     self.assertAlmostEqual(rms2, AllChem.GetBestRMS(m2, m1, 1, 0), 3)
 
     # the RMS with itself must be zero
     rms2 = AllChem.GetConformerRMS(m1, 0, 0, prealigned=True)
     self.assertAlmostEqual(rms2, 0.0, 4)
 
+    rms2 = AllChem.GetBestRMS(m1, m1, 0, 0)
+    self.assertAlmostEqual(rms2, 0.0, 4)
+
+  def test_GetBestRMS(self):
+    m1 = Chem.MolFromSmiles('CCC(C)(C)C')
+    m1 = Chem.AddHs(m1)
+    _ = AllChem.EmbedMultipleConfs(m1, 2)
+    print(m1.GetNumAtoms())
+
+    import time
+    t0 = time.time()
+    AllChem.GetBestRMS(m1, m1, 1, 0)
+    print(time.time() - t0)
+
+    m1 = Chem.MolFromSmiles('CCC(C)(C)C')
+    m1 = Chem.AddHs(m1)
+    _ = AllChem.EmbedMultipleConfs(m1, 2)
+    m2 = Chem.MolFromSmiles('CCC(C)(C)C')
+    m2 = Chem.AddHs(m2)
+    m2.AddConformer(m1.GetConformer(id=1))
+
+    t0 = time.time()
+    AllChem.GetBestRMS(m1, m2, ignoreHydrogens=False)
+    print(time.time() - t0)
+
   def testConformerRMSMatrix(self):
     m1 = Chem.MolFromSmiles('CNc(n2)nc(C)cc2Nc(cc34)ccc3[nH]nc4')
-    _ = AllChem.EmbedMultipleConfs(m1, 3)
+    _ = AllChem.EmbedMultipleConfs(m1, 3, randomSeed=0)
+
+    # Check confIds
+    rmsvals1 = []
+    AllChem.AlignMolConformers(m1, confIds=[2, 0, 1], RMSlist=rmsvals1)
+    rmsvals2 = []
+    AllChem.AlignMolConformers(m1, confIds=[0, 2, 1], RMSlist=rmsvals2)
+    # aligning one conformer to the other can be reversed
+    self.assertAlmostEqual(rmsvals1[0], rmsvals2[0], places=2)
+    # but values are different if we align a conformer (1) to different conformers
+    self.assertNotAlmostEqual(rmsvals1[1], rmsvals2[1], places=2)
+
+    # Now we align everything to the first conformer before we calculate the full RMS matrix
+    rmsvals = []
+    AllChem.AlignMolConformers(m1, RMSlist=rmsvals)
+#     print(rmsvals)
+#     print('old code ', [1.7259733364813168, 1.0050653394532882])
+
+    rmat = AllChem.GetConformerRMSMatrix(m1)
+    self.assertEqual(len(rmat), 3)
+#     print(rmat)
+#     print('old code ', [1.7259733369398338, 1.0050653394532898, 2.1019488243436353])
+    for rms1, rms2 in zip(rmsvals, rmat[:2]):
+      self.assertAlmostEqual(rms1, rms2)
+
+    m1 = Chem.MolFromSmiles('CNc(n2)nc(C)cc2Nc(cc34)ccc3[nH]nc4')
+    _ = AllChem.EmbedMultipleConfs(m1, 3, randomSeed=0)
+
+    rmatNoAlign = AllChem.GetConformerRMSMatrix(m1, prealigned=True)
+    rmatAligned = AllChem.GetConformerRMSMatrix(m1, prealigned=False)
+    for rms1, rms2 in zip(rmatNoAlign, rmatAligned):
+      self.assertGreaterEqual(rms1, rms2)
+
+    m1 = Chem.MolFromSmiles('NCCCC')
+    _ = AllChem.EmbedMultipleConfs(m1, 3, randomSeed=0)
+    # If we use only three atoms, the RMS values to the first conformer will be close to 0
+    rmat = AllChem.GetConformerRMSMatrix(m1, atomIds=[0, 1])
+    self.assertAlmostEqual(rmat[0], rmat[1], places=5)
+
+    return
 
     m2 = Chem.MolFromSmiles('CNc(n2)nc(C)cc2Nc(cc34)ccc3[nH]nc4')
     m2.AddConformer(m1.GetConformer(id=0))
@@ -71,14 +139,17 @@ class TestCase(unittest.TestCase):
     # test that the RMS matrix has the correct size
     rmat = AllChem.GetConformerRMSMatrix(m1)
     self.assertEqual(len(rmat), 3)
+    print(rmat)
+    print('old code ', [1.7259733369398338, 1.0050653394532898, 2.1019488243436353])
+
+    # test the prealigned option
+    rmat2 = AllChem.GetConformerRMSMatrix(m1, prealigned=True)
+    print(rmat2)
+    self.assertAlmostEqual(rmat[0], rmat2[0])
 
     # test that the elements are in the right order
     self.assertAlmostEqual(rmat[0], AllChem.GetBestRMS(m1, m2, 1, 0), 3)
     self.assertAlmostEqual(rmat[1], AllChem.GetBestRMS(m1, m2, 2, 0), 3)
-
-    # test the prealigned option
-    rmat2 = AllChem.GetConformerRMSMatrix(m1, prealigned=True)
-    self.assertAlmostEqual(rmat[0], rmat2[0])
 
   def testTorsionFingerprints(self):
     # we use the xray structure from the paper (JCIM, 52, 1499, 2012): 1DWD

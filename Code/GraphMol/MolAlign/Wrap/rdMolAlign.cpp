@@ -213,9 +213,11 @@ double getConformerRMS(ROMol &mol, int confId1, int confId2,
 }
 
 double getBestRMS(const ROMol &ref, ROMol &probe, int refConfId,
-                  int probeConfId, python::object maps = python::list()) {
+                  int probeConfId, python::object maps = python::list(),
+                  bool ignoreHydrogens = true) {
   double rmsd;
   if (maps) {
+    1 / 0;
     std::vector<MatchVectType> atomMaps;
     //    BOOST_FOREACH (const python::object &map, *maps) {
     //      MatchVectType *atomMap = _translateAtomMap(map);
@@ -223,9 +225,14 @@ double getBestRMS(const ROMol &ref, ROMol &probe, int refConfId,
     //    }
     rmsd = 3.14;
   } else {
-    rmsd = MolAlign::getBestRMS(ref, probe, refConfId, probeConfId);
+    MolAlign::AlignmentParameters alignPara;
+    alignPara.ignoreHydrogens = ignoreHydrogens;
+    alignPara.findBestAtomMap = true;
+    alignPara.enumerateAll = true;
+    alignPara.prbConformerID = probeConfId;
+    alignPara.refConformerID = refConfId;
+    rmsd = MolAlign::alignMol(probe, ref, alignPara);
   }
-
   return rmsd;
 }
 
@@ -745,30 +752,36 @@ BOOST_PYTHON_MODULE(rdMolAlign) {
               docString.c_str());
 
   docString =
-      "GetBestRMS.\n\
-     \n\
-     By default, the conformers will be aligned to the first conformer\n\
-     of the molecule (i.e. the reference) before RMS calculation and,\n\
-     as a side-effect the conformers will be left in the aligned state.\n\
-     \n\
-     ARGUMENTS:\
-      - mol         the molecule\n\
-      - confId1     the id of the first conformer\n\
-      - confId2     the id of the second conformer\n\
-      - atomIds     (optional) list of atom ids to use a points for\n\
-                    alingment - defaults to all atoms\n\
-      - prealigned  (optional) by default the conformers are assumed\n\
-                    be unaligned and will therefore be aligned to the\n\
-                    first conformer\n\
-     \n\
-     RETURNS\n\
-     RMSD value\n\
-     \n";
-  // def GetBestRMS(ref, probe, refConfId=-1, probeConfId=-1, maps=None):
+      "Returns the optimal RMS for aligning two molecules, taking\n\
+     symmetry into account.\n\
+	 \n\
+	 Returns the optimal RMS for aligning two molecules, taking\n\
+	 symmetry into account. As a side-effect, the probe molecule is\n\
+	 left in the aligned state.\n\
+	 \n\
+	 ARGUMENTS:\n\
+	  - ref              the reference molecule\n\
+	  - probe            the molecule to be aligned to the reference\n\
+	  - refConfId        (optional) reference conformation to use\n\
+	  - probeConfId      (optional) probe conformation to use\n\
+	  - maps             (optional) a list of lists of (probeAtomId,refAtomId)\n\
+             		     tuples with the atom-atom mappings of the two molecules.\n\
+		                 If not provided, these will be generated using a substructure\n\
+		                 search.\n\
+      - ignoreHydrogens  (optional) Use only heavy atoms for atom-atom map\n\
+                         generation (default true)\n\
+	 \n\
+	 Note:\n\
+	 This function will attempt to align all permutations of matching atom\n\
+	 orders in both molecules, for some molecules it will lead to 'combinatorial\n\
+	 explosion' especially if hydrogens are included.\n\
+	 Use 'rdkit.Chem.AllChem.AlignMol' to align molecules without changing the\n\
+	 atom order. ";
   python::def(
       "GetBestRMS", RDKit::getBestRMS,
-      (python::arg("ref"), python::arg("probe"), python::arg("refConfId"),
-       python::arg("probeConfId"), python::arg("maps") = python::list()),
+      (python::arg("ref"), python::arg("probe"), python::arg("refConfId") = -1,
+       python::arg("probeConfId") = -1, python::arg("maps") = python::list(),
+       python::arg("ignoreHydrogens") = true),
       docString.c_str());
 
   docString =
