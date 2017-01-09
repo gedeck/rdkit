@@ -47,7 +47,6 @@ void alignMolConformers(ROMol &mol, const AlignmentParameters &alignParameter,
     }
     cAlignParameter.atomMap = &atomMap;
   }
-  //  std::cout << '\n' << cAlignParameter;
 
   // Create list of confIds if missing
   std::vector<unsigned int> cConfIds;
@@ -58,14 +57,9 @@ void alignMolConformers(ROMol &mol, const AlignmentParameters &alignParameter,
       cConfIds.push_back(i);
     }
   }
-  //  std::cout << "Conformations: ";
-  //  printVector(std::cout, cConfIds);
-  //  std::cout << '\n';
   cAlignParameter.refConformerID = cConfIds[0];
   BOOST_FOREACH (int confId, cConfIds) {
-    //    std::cout << "Align conformation " << confId;
     if (confId == cAlignParameter.refConformerID) {
-      //      std::cout << "skipped\n";
       continue;
     }
     cAlignParameter.prbConformerID = confId;
@@ -73,15 +67,15 @@ void alignMolConformers(ROMol &mol, const AlignmentParameters &alignParameter,
     if (RMSlist) {
       RMSlist->push_back(rmsd);
     }
-    //    std::cout << "aligned" << rmsd << "\n";
   }
 }
 
-void _getHeavyIndices(const ROMol &mol, std::set<int> &hAtoms) {
+void _getHeavyIndices(const ROMol &mol, std::set<int> &heavyAtoms) {
+  heavyAtoms.clear();
   for (ROMol::ConstAtomIterator atomIt = mol.beginAtoms();
        atomIt != mol.endAtoms(); ++atomIt) {
     if ((*atomIt)->getAtomicNum() != 1) {
-      hAtoms.insert((*atomIt)->getIdx());
+      heavyAtoms.insert((*atomIt)->getIdx());
     }
   }
 }
@@ -102,8 +96,7 @@ void getAtomMappings(RWMol &refMol, RWMol &prbMol,
       for (MatchVectType::const_iterator mapping =
                alignParameter.atomMap->begin();
            mapping != alignParameter.atomMap->end(); ++mapping) {
-        if (prbIdx.count(mapping->first) == 1 and
-            refIdx.count(mapping->second) == 1) {
+        if (prbIdx.count(mapping->first) and refIdx.count(mapping->second)) {
           atomMap.push_back(
               std::pair<int, int>(mapping->first, mapping->second));
         }

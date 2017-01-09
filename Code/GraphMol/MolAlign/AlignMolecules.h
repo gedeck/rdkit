@@ -249,6 +249,9 @@ double getAlignmentTransform(const ROMol &prbMol, const ROMol &refMol,
 //    const AlignmentParameters &alignParameter = AlignmentParameters(),
 //    std::vector<double> *RMSlist = NULL);
 
+// Private methods
+void _getHeavyIndices(const ROMol &mol, std::set<int> &heavyAtoms);
+
 }  // end namespace MolAlign
 }
 #endif
