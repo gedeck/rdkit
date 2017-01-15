@@ -115,9 +115,10 @@ std::ostream &operator<<(std::ostream &os, const AlignmentParameters &param);
 double alignMol(ROMol &prbMol, const ROMol &refMol,
                 const AlignmentParameters &alignParameter);
 
-//! Align the conformations of a molecule using a common set of atoms. If
-// the molecules contains queries, then the queries must also match exactly.
+//! Align the conformations of a molecule using a common set of atoms.
 /*!
+  If the molecules contains queries, then the queries must also match exactly.
+
   \param mol                 the molecule of interest.
   \param alignmentParameter  control parameter for alignment process
   \param atomIds             vector of atoms to be used to generate the
@@ -131,6 +132,52 @@ void alignMolConformers(ROMol &mol, const AlignmentParameters &alignParameter,
                         const std::vector<unsigned int> *atomIds = NULL,
                         const std::vector<unsigned int> *confIds = NULL,
                         std::vector<double> *RMSlist = 0);
+
+//! Compute the RMSD between two conformations
+/*!
+  Returns the RMS between two conformations.
+  By default, the conformers will be aligned to the first conformer
+  of the molecule (i.e. the reference) before RMS calculation and,
+  as a side-effect, will be left in the aligned state.
+
+  \param mol        molecule with several conformations
+  \param confId1    the id of the first conformer
+  \param confId2    the id of the second conformer
+  \param atomIds    list of atom ids to use as points for alignment (defaults
+                    to all atoms)
+  \param prealigned by default the conformers are assumed to be unaligned and
+                    will therefore be aligned to the first conformer
+
+  <b>Returns</b>
+  RMSD value
+*/
+double getConformerRMS(ROMol &mol, unsigned int confId1, unsigned int confId2,
+                       const std::vector<unsigned int> *atomIds = NULL,
+                       bool prealigned = false);
+
+//! Compute the transformation required to align a molecule
+/*!
+  The 3D transformation required to align the specied conformation in the probe
+  molecule (alignParameter.prbConformerID) to a specified conformation in the
+  reference molecule (alignParameter.refConformerID) is computed so that the
+  root mean squared distance between a specified set of atoms is minimized.
+
+  If alignParameter.findBestAtomMap is true, all atom maps (user provided or
+  automatically generated) are tried and the one with the lowest RMSD used for
+  the 3D transformation. Note that in this case it is best to ignore hydrogens
+  to reduce the number of possible maps.
+
+  \param prbMol          molecule that is to be aligned
+  \param refMol          molecule used as the reference for the alignment
+  \param trans           storage for the computed transform
+  \param alignParameter  control parameter for alignment process
+
+  <b>Returns</b>
+  RMSD value
+*/
+double getAlignmentTransform(const ROMol &prbMol, const ROMol &refMol,
+                             RDGeom::Transform3D &trans,
+                             const AlignmentParameters &alignParameter);
 
 /*
  * Old API
@@ -223,8 +270,8 @@ void alignMolConformers(ROMol &mol,
 
 // private functions
 
-//! Create one or more mappings between the two molecules. prbMol can be a
-//! substructure of refMol.
+//! Create one or more mappings between the two molecules
+//! (alignParameter.enumerateAll). prbMol can be a substructure of refMol.
 /*!
    \param refMol
    \param prbMol
@@ -235,13 +282,22 @@ void getSubstructureAtomMapping(const ROMol &refMol, const ROMol &prbMol,
                                 std::vector<MatchVectType> &atomMaps,
                                 const AlignmentParameters &alignParameter);
 
+//! Create one or more mappings between the two molecules.
+/* The mapping is controlled by alignParameter. The alignParameter.atomMap
+ allows the user to provide a mapping between the two molecules. Otherwise
+ substructure mappings of prbMol in refMol are determined (use
+ alignParameter.enumerateAll to get all possible mappings). The parameter
+ alignParameter.ignoreHydrogens can be used to reduce the mappings to heavy
+ atoms only.
+
+   \param refMol
+   \param prbMol
+   \param atomMaps
+   \param alignParameter
+ */
 void getAtomMappings(RWMol &refMol, RWMol &prbMol,
                      std::vector<MatchVectType> &atomMaps,
                      const AlignmentParameters &alignParameter);
-
-double getAlignmentTransform(const ROMol &prbMol, const ROMol &refMol,
-                             RDGeom::Transform3D &trans,
-                             const AlignmentParameters &alignParameter);
 
 // void alignMolConformers(
 //    ROMol &mol, const std::vector<unsigned int> *atomIds = NULL,
@@ -251,6 +307,10 @@ double getAlignmentTransform(const ROMol &prbMol, const ROMol &refMol,
 
 // Private methods
 void _getHeavyIndices(const ROMol &mol, std::set<int> &heavyAtoms);
+double _getAlignmentTransform(const ROMol &prbMol, const ROMol &refMol,
+                              RDGeom::Transform3D &trans, int prbCid,
+                              int refCid, const MatchVectType &atomMap,
+                              const AlignmentParameters &alignParameter);
 
 }  // end namespace MolAlign
 }

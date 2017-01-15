@@ -19,28 +19,6 @@ namespace MolAlign {
 
 //! Alignment metrics
 
-//! Compute the RMSD between two conformations
-/*!
-  Returns the RMS between two conformations.
-  By default, the conformers will be aligned to the first conformer
-  of the molecule (i.e. the reference) before RMS calculation and,
-  as a side-effect, will be left in the aligned state.
-
-  \param mol        molecule with several conformations
-  \param confId1    the id of the first conformer
-  \param confId2    the id of the second conformer
-  \param atomIds    list of atom ids to use as points for alignment (defaults
-                    to all atoms)
-  \param prealigned by default the conformers are assumed to be unaligned and
-                    will therefore be aligned to the first conformer
-
-  <b>Returns</b>
-  RMSD value
-*/
-double getConformerRMS(ROMol &mol, unsigned int confId1, unsigned int confId2,
-                       const std::vector<unsigned int> *atomIds = NULL,
-                       bool prealigned = false);
-
 //! Compute the optimal RMSD between two molecules
 /*!
   Returns the optimal RMS for aligning two molecules, taking

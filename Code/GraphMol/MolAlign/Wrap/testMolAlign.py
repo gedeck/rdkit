@@ -1,4 +1,3 @@
-# $Id$
 #
 #  Copyright (C) 2004-2006 Rational Discovery LLC
 #
@@ -6,11 +5,13 @@
 #
 from __future__ import print_function
 from rdkit import RDConfig
-import os, sys, copy
+import os
+import copy
 import unittest
 import math
 from rdkit import Chem
-from rdkit.Chem import rdMolAlign, rdMolTransforms, rdMolDescriptors, rdDistGeom, ChemicalForceFields
+from rdkit.Chem import rdMolAlign, rdMolTransforms, rdMolDescriptors
+from rdkit.Chem import rdDistGeom, ChemicalForceFields
 
 
 def lstFeq(l1, l2, tol=1.e-4):
@@ -26,65 +27,67 @@ def feq(v1, v2, tol2=1e-4):
   return abs(v1 - v2) <= tol2
 
 
-class TestCase(unittest.TestCase):
+class TestCase_alignMolecules(unittest.TestCase):
+  testDir = os.path.join(RDConfig.RDBaseDir, 'Code', 'GraphMol', 'MolAlign', 'test_data')
 
-  def setUp(self):
-    pass
+  def test_AlignmentParameters(self):
+    alignPara = rdMolAlign.AlignmentParameters()
+    # Check the default settings haven't changed
+    self.assertFalse(alignPara.findBestAtomMap)
+    self.assertFalse(alignPara.ignoreHydrogens)
+    self.assertFalse(alignPara.enumerateAll)
+    self.assertFalse(alignPara.reflect)
+    self.assertEqual(alignPara.maxIterations, 50)
 
-  def test1Basic(self):
-    file1 = os.path.join(RDConfig.RDBaseDir, 'Code', 'GraphMol', 'MolAlign', 'test_data',
-                         '1oir.mol')
-    file2 = os.path.join(RDConfig.RDBaseDir, 'Code', 'GraphMol', 'MolAlign', 'test_data',
-                         '1oir_conf.mol')
+    self.assertEqual(alignPara.refConformerID, -1)
+    self.assertEqual(alignPara.prbConformerID, -1)
 
-    mol1 = Chem.MolFromMolFile(file1)
-    mol2 = Chem.MolFromMolFile(file2)
+    self.assertFalse(alignPara.refAllConformers)
+    self.assertFalse(alignPara.prbAllConformers)
+
+  def test_MolAlignBasic(self):
+    mol1 = Chem.MolFromMolFile(os.path.join(self.testDir, '1oir.mol'))
+    mol2 = Chem.MolFromMolFile(os.path.join(self.testDir, '1oir_conf.mol'))
+    mol3 = Chem.MolFromMolFile(os.path.join(self.testDir, '1oir_trans.mol'))
 
     rmsd = rdMolAlign.AlignMol(mol2, mol1)
     self.assertTrue(feq(rmsd, 0.6578))
 
-    file3 = os.path.join(RDConfig.RDBaseDir, 'Code', 'GraphMol', 'MolAlign', 'test_data',
-                         '1oir_trans.mol')
-    mol3 = Chem.MolFromMolFile(file3)
     conf2 = mol2.GetConformer()
     conf3 = mol3.GetConformer()
-
-    for i in range(mol2.GetNumAtoms()):
+    for i in range(conf2.GetNumAtoms()):
       self.assertTrue(lstFeq(conf2.GetAtomPosition(i), conf3.GetAtomPosition(i)))
 
     rmsd, trans = rdMolAlign.GetAlignmentTransform(mol2, mol1)
     self.assertAlmostEqual(rmsd, 0.6579, 4)
 
-  def test2AtomMap(self):
+  def test_MolAlignAtomMap(self):
     atomMap = ((18, 27), (13, 23), (21, 14), (24, 7), (9, 19), (16, 30))
-    file1 = os.path.join(RDConfig.RDBaseDir, 'Code', 'GraphMol', 'MolAlign', 'test_data',
-                         '1oir.mol')
-    file2 = os.path.join(RDConfig.RDBaseDir, 'Code', 'GraphMol', 'MolAlign', 'test_data',
-                         '1oir_conf.mol')
-
-    mol1 = Chem.MolFromMolFile(file1)
-    mol2 = Chem.MolFromMolFile(file2)
-    rmsd = rdMolAlign.AlignMol(mol2, mol1, 0, 0, atomMap)
+    mol1 = Chem.MolFromMolFile(os.path.join(self.testDir, '1oir.mol'))
+    mol2 = Chem.MolFromMolFile(os.path.join(self.testDir, '1oir_conf.mol'))
+    rmsd = rdMolAlign.AlignMol(mol2, mol1, atomMap=atomMap)
     self.assertAlmostEqual(rmsd, 0.8525, 4)
 
-  def test3Weights(self):
+  def test_MolAlignWeights(self):
     atomMap = ((18, 27), (13, 23), (21, 14), (24, 7), (9, 19), (16, 30))
-    file1 = os.path.join(RDConfig.RDBaseDir, 'Code', 'GraphMol', 'MolAlign', 'test_data',
-                         '1oir.mol')
-    file2 = os.path.join(RDConfig.RDBaseDir, 'Code', 'GraphMol', 'MolAlign', 'test_data',
-                         '1oir_conf.mol')
-
-    mol1 = Chem.MolFromMolFile(file1)
-    mol2 = Chem.MolFromMolFile(file2)
     wts = (1.0, 1.0, 1.0, 1.0, 1.0, 2.0)
-    rmsd = rdMolAlign.AlignMol(mol2, mol1, 0, 0, atomMap, wts)
+    mol1 = Chem.MolFromMolFile(os.path.join(self.testDir, '1oir.mol'))
+    mol2 = Chem.MolFromMolFile(os.path.join(self.testDir, '1oir_conf.mol'))
+    rmsd = rdMolAlign.AlignMol(mol2, mol1, atomMap=atomMap, weights=wts)
     self.assertAlmostEqual(rmsd, 0.9513, 4)
+
+    self.assertRaises(ValueError, rdMolAlign.AlignMol, mol2, mol1, weights=wts)
+
+
+
+# @unittest.skip('for now')
+class TestCase():  # unittest.TestCase):
 
   def test4AlignConfs(self):
     mol = Chem.MolFromSmiles('C1CC1CNc(n2)nc(C)cc2Nc(cc34)ccc3[nH]nc4')
 
     cids = rdDistGeom.EmbedMultipleConfs(mol, 10, 30, 100)
-    #writer = Chem.SDWriter('mol_899.sdf')
+    # writer = Chem.SDWriter('mol_899.sdf')
 
     for cid in cids:
       ff = ChemicalForceFields.UFFGetMoleculeForceField(mol, confId=cid)
@@ -177,9 +180,9 @@ class TestCase(unittest.TestCase):
   def test8MMFFO3A(self):
     " test MMFFO3A with constraints "
 
-    #we superimpose two identical coplanar 4-phenylpyridines:
-    #1) the usual way
-    #2) forcing the pyridine nitrogen to match with the para
+    # we superimpose two identical coplanar 4-phenylpyridines:
+    # 1) the usual way
+    # 2) forcing the pyridine nitrogen to match with the para
     #   carbon of the phenyl ring
     m = Chem.MolFromSmiles('n1ccc(cc1)-c1ccccc1')
     m1 = Chem.AddHs(m)
@@ -205,14 +208,14 @@ class TestCase(unittest.TestCase):
     d = m3.GetConformer().GetAtomPosition(cIdx). \
       Distance(m1.GetConformer().GetAtomPosition(cIdx))
     self.assertAlmostEqual(d, 7, 0)
-    #alignedSdf = os.path.join(RDConfig.RDBaseDir,'Code','GraphMol',
+    # alignedSdf = os.path.join(RDConfig.RDBaseDir,'Code','GraphMol',
     #                          'MolAlign', 'test_data',
     #                          '4-phenylpyridines_MMFFO3A.sdf')
-    #sdW = Chem.SDWriter(alignedSdf)
-    #sdW.write(m1)
-    #sdW.write(m2)
-    #sdW.write(m3)
-    #sdW.close()
+    # sdW = Chem.SDWriter(alignedSdf)
+    # sdW.write(m1)
+    # sdW.write(m2)
+    # sdW.write(m3)
+    # sdW.close()
 
   def test9MMFFO3A(self):
     " test MMFFO3A with variable weight constraints followed by local-only optimization "
@@ -291,9 +294,9 @@ class TestCase(unittest.TestCase):
   def test12CrippenO3A(self):
     " test CrippenO3A with constraints "
 
-    #we superimpose two identical coplanar 4-phenylpyridines:
-    #1) the usual way
-    #2) forcing the pyridine nitrogen to match with the para
+    # we superimpose two identical coplanar 4-phenylpyridines:
+    # 1) the usual way
+    # 2) forcing the pyridine nitrogen to match with the para
     #   carbon of the phenyl ring
     m = Chem.MolFromSmiles('n1ccc(cc1)-c1ccccc1')
     m1 = Chem.AddHs(m)
@@ -319,14 +322,14 @@ class TestCase(unittest.TestCase):
     d = m3.GetConformer().GetAtomPosition(cIdx). \
       Distance(m1.GetConformer().GetAtomPosition(cIdx))
     self.assertAlmostEqual(d, 7, 0)
-    #alignedSdf = os.path.join(RDConfig.RDBaseDir,'Code','GraphMol',
+    # alignedSdf = os.path.join(RDConfig.RDBaseDir,'Code','GraphMol',
     #                          'MolAlign', 'test_data',
     #                          '4-phenylpyridines_CrippenO3A.sdf')
-    #sdW = Chem.SDWriter(alignedSdf)
-    #sdW.write(m1)
-    #sdW.write(m2)
-    #sdW.write(m3)
-    #sdW.close()
+    # sdW = Chem.SDWriter(alignedSdf)
+    # sdW.write(m1)
+    # sdW.write(m2)
+    # sdW.write(m3)
+    # sdW.close()
 
   def test13CrippenO3A(self):
     " test CrippenO3A with variable weight constraints followed by local-only optimization "
@@ -455,18 +458,18 @@ class TestCase(unittest.TestCase):
         cc = Chem.Conformer(c)
         m.AddConformer(cc, assignId=True)
 
-    #refParams = ChemicalForceFields.MMFFGetMoleculeProperties(bzr_ms_o[0])
+    # refParams = ChemicalForceFields.MMFFGetMoleculeProperties(bzr_ms_o[0])
 
     for i, m in enumerate(bzr_ms):
-      #prbParams = ChemicalForceFields.MMFFGetMoleculeProperties(m)
+      # prbParams = ChemicalForceFields.MMFFGetMoleculeProperties(m)
       algs = rdMolAlign.GetO3AForProbeConfs(m,
                                             bzr_ms_o[0],
-                                            numThreads=4  #,prbPyMMFFMolProperties=prbParams,
-                                            #refPyMMFFMolProperties=refParams
+                                            numThreads=4  # ,prbPyMMFFMolProperties=prbParams,
+                                            # refPyMMFFMolProperties=refParams
                                             )
       self.failUnlessEqual(len(algs), nConfs)
 
 
 if __name__ == '__main__':
   print("Testing MolAlign Wrappers")
-  unittest.main()
+  unittest.main(verbosity=2)

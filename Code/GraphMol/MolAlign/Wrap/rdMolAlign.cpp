@@ -75,39 +75,6 @@ std::vector<unsigned int> *_translateIds(python::object ids) {
   return ivec;
 }
 
-void alignMolConfs(ROMol &mol, python::object atomIds, python::object confIds,
-                   python::object weights, bool reflect, unsigned int maxIters,
-                   python::object RMSlist) {
-  RDNumeric::DoubleVector *wtsVec = _translateWeights(weights);
-  std::vector<unsigned int> *aIds = _translateIds(atomIds);
-  std::vector<unsigned int> *cIds = _translateIds(confIds);
-  std::vector<double> *RMSvector = 0;
-  if (RMSlist != python::object()) {
-    RMSvector = new std::vector<double>();
-  }
-  {
-    NOGIL gil;
-    MolAlign::alignMolConformers(mol, aIds, cIds, wtsVec, reflect, maxIters,
-                                 RMSvector);
-  }
-  if (wtsVec) {
-    delete wtsVec;
-  }
-  if (aIds) {
-    delete aIds;
-  }
-  if (cIds) {
-    delete cIds;
-  }
-  if (RMSvector) {
-    python::list &pyl = static_cast<python::list &>(RMSlist);
-    for (unsigned int i = 0; i < (*RMSvector).size(); ++i) {
-      pyl.append((*RMSvector)[i]);
-    }
-    delete RMSvector;
-  }
-}
-
 PyObject *generateRmsdTransPyTuple(double rmsd, RDGeom::Transform3D &trans) {
   npy_intp dims[2];
   dims[0] = 4;
@@ -165,37 +132,118 @@ PyObject *getMolAlignTransform(const ROMol &prbMol, const ROMol &refMol,
   return generateRmsdTransPyTuple(rmsd, trans);
 }
 
-double AlignMolecule(ROMol &prbMol, const ROMol &refMol, int prbCid = -1,
-                     int refCid = -1, python::object atomMap = python::list(),
-                     python::object weights = python::list(),
-                     bool reflect = false, unsigned int maxIters = 50) {
+MolAlign::AlignmentParameters *initAlignmentParameters(
+    python::object alignParameter, python::object atomMap,
+    python::object weights, unsigned int maxIters = 50, bool reflect = false,
+    int prbCid = -1, int refCid = -1) {
   MatchVectType *aMap = _translateAtomMap(atomMap);
-  unsigned int nAtms;
-  if (aMap) {
-    nAtms = aMap->size();
-  } else {
-    nAtms = prbMol.getNumAtoms();
-  }
   RDNumeric::DoubleVector *wtsVec = _translateWeights(weights);
-  if (wtsVec) {
-    if (wtsVec->size() != nAtms) {
+
+  MolAlign::AlignmentParameters *alignPara = NULL;
+  if (alignParameter != python::object()) {
+    alignPara =
+        python::extract<MolAlign::AlignmentParameters *>(alignParameter);
+  } else {
+    alignPara = new MolAlign::AlignmentParameters();
+  }
+  alignPara->atomMap = aMap;
+  alignPara->weights = wtsVec;
+  // Process arguments from the old API
+  alignPara->maxIterations =
+      (maxIters == 50 ? alignPara->maxIterations : maxIters);
+  alignPara->reflect = (reflect == false ? alignPara->reflect : reflect);
+  alignPara->prbConformerID =
+      (prbCid == -1 ? alignPara->prbConformerID : prbCid);
+  alignPara->refConformerID =
+      (refCid == -1 ? alignPara->refConformerID : refCid);
+  // std::cout << "alignParameter " << *alignPara << '\n';
+  return alignPara;
+}
+
+void doneAlignmentParameters(MolAlign::AlignmentParameters *alignPara) {
+  if (alignPara->atomMap) {
+    delete alignPara->atomMap;
+  }
+  if (alignPara->weights) {
+    delete alignPara->weights;
+  }
+}
+
+double AlignMolecule(ROMol &prbMol, const ROMol &refMol,
+                     python::object alignParameter = python::object(),
+                     python::object atomMap = python::list(),
+                     python::object weights = python::list(),
+                     unsigned int maxIters = 50, bool reflect = false,
+                     int prbCid = -1, int refCid = -1) {
+  MolAlign::AlignmentParameters *alignPara = initAlignmentParameters(
+      alignParameter, atomMap, weights, maxIters, reflect, prbCid, refCid);
+
+  if (alignPara->weights) {
+    unsigned int nAtms;
+    if (alignPara->atomMap) {
+      nAtms = alignPara->atomMap->size();
+    } else {
+      nAtms = prbMol.getNumAtoms();
+    }
+    if (alignPara->weights->size() != nAtms) {
       throw_value_error("Incorrect number of weights specified");
     }
   }
 
-  double rmsd;
+  double rmsd = 0.0;
   {
     NOGIL gil;
-    rmsd = MolAlign::alignMol(prbMol, refMol, prbCid, refCid, aMap, wtsVec,
-                              reflect, maxIters);
+    rmsd = MolAlign::alignMol(prbMol, refMol, *alignPara);
   }
-  if (aMap) {
-    delete aMap;
-  }
-  if (wtsVec) {
-    delete wtsVec;
+
+  doneAlignmentParameters(alignPara);
+  if (alignParameter == python::object()) {
+    delete alignPara;
   }
   return rmsd;
+}
+
+void alignMolConfs(ROMol &mol, python::object alignParameter = python::object(),
+                   python::object atomIds = python::list(),
+                   python::object confIds = python::list(),
+                   python::object weights = python::list(),
+                   python::object RMSlist = python::object(),
+                   unsigned int maxIters = 50, bool reflect = false) {
+  1 / 0;
+  RDNumeric::DoubleVector *wtsVec = _translateWeights(weights);
+  std::vector<unsigned int> *aIds = _translateIds(atomIds);
+  std::vector<unsigned int> *cIds = _translateIds(confIds);
+
+  MolAlign::AlignmentParameters *alignPara = initAlignmentParameters(
+      alignParameter, python::list(), weights, maxIters, reflect, -1, -1);
+
+  std::vector<double> *RMSvector = 0;
+  if (RMSlist != python::object()) {
+    RMSvector = new std::vector<double>();
+  }
+
+  {
+    NOGIL gil;
+    MolAlign::alignMolConformers(mol, *alignPara, aIds, cIds, RMSvector);
+  }
+
+  if (aIds) {
+    delete aIds;
+  }
+  if (cIds) {
+    delete cIds;
+  }
+  doneAlignmentParameters(alignPara);
+  if (alignParameter == python::object()) {
+    delete alignPara;
+  }
+  if (RMSvector) {
+    python::list &pyl = static_cast<python::list &>(RMSlist);
+    for (unsigned int i = 0; i < (*RMSvector).size(); ++i) {
+      pyl.append((*RMSvector)[i]);
+    }
+    delete RMSvector;
+  }
 }
 
 double getConformerRMS(ROMol &mol, int confId1, int confId2,
@@ -235,7 +283,9 @@ double getBestRMS(const ROMol &ref, ROMol &probe, int refConfId,
   }
   return rmsd;
 }
+}
 
+namespace RDKit {
 namespace MolAlign {
 class PyO3A {
  public:
@@ -632,7 +682,22 @@ BOOST_PYTHON_MODULE(rdMolAlign) {
                      "If true reflect the conformation of the probe molecule")
       .def_readwrite("maxIterations",
                      &RDKit::MolAlign::AlignmentParameters::maxIterations,
-                     "Maximum number of iteration used in minimizing the RMSD");
+                     "Maximum number of iteration used in minimizing the RMSD")
+      .def_readwrite(
+          "refConformerID",
+          &RDKit::MolAlign::AlignmentParameters::refConformerID,
+          "ID of reference conformer (default -1, to consider the first)")
+      .def_readwrite(
+          "prbConformerID",
+          &RDKit::MolAlign::AlignmentParameters::prbConformerID,
+          "ID of probe conformer (default -1, to consider the first)")
+      .def_readwrite(
+          "refAllConformers",
+          &RDKit::MolAlign::AlignmentParameters::refAllConformers,
+          "Use all conformers of reference to find the best alignment")
+      .def_readwrite("prbAllConformers",
+                     &RDKit::MolAlign::AlignmentParameters::prbAllConformers,
+                     "Use all conformers of probe to find the best alignment");
 
   std::string docString =
       "Compute the transformation required to align a molecule\n\
@@ -678,28 +743,32 @@ BOOST_PYTHON_MODULE(rdMolAlign) {
      ARGUMENTS\n\
       - prbMol    molecule that is to be aligned\n\
       - refMol    molecule used as the reference for the alignment\n\
-      - prbCid    ID of the conformation in the probe to be used \n\
-                       for the alignment (defaults to first conformation)\n\
-      - refCid    ID of the conformation in the ref molecule to which \n\
-                       the alignment is computed (defaults to first conformation)\n\
+      - alignParameter  parameter used for alignment\n\
       - atomMap   a vector of pairs of atom IDs (probe AtomId, ref AtomId)\n\
                        used to compute the alignments. If this mapping is \n\
                        not specified an attempt is made to generate on by\n\
                        substructure matching\n\
       - weights   Optionally specify weights for each of the atom pairs\n\
+      \n\
+     Deprecated arguments:\n\
+      - prbCid    ID of the conformation in the probe to be used \n\
+                       for the alignment (defaults to first conformation)\n\
+      - refCid    ID of the conformation in the ref molecule to which \n\
+                       the alignment is computed (defaults to first conformation)\n\
       - reflect   if true reflect the conformation of the probe molecule\n\
       - maxIters  maximum number of iterations used in mimizing the RMSD\n\
        \n\
       RETURNS\n\
       RMSD value\n\
     \n";
-  python::def(
-      "AlignMol", RDKit::AlignMolecule,
-      (python::arg("prbMol"), python::arg("refMol"), python::arg("prbCid") = -1,
-       python::arg("refCid") = -1, python::arg("atomMap") = python::list(),
-       python::arg("weights") = python::list(), python::arg("reflect") = false,
-       python::arg("maxIters") = 50),
-      docString.c_str());
+  python::def("AlignMol", RDKit::AlignMolecule,
+              (python::arg("prbMol"), python::arg("refMol"),
+               python::arg("alignParameter") = python::object(),
+               python::arg("atomMap") = python::list(),
+               python::arg("weights") = python::list(),
+               python::arg("maxIters") = 50, python::arg("reflect") = false,
+               python::arg("prbCid") = -1, python::arg("refCid") = -1),
+              docString.c_str());
 
   docString =
       "Alignment conformations in a molecule to each other\n\
@@ -708,21 +777,26 @@ BOOST_PYTHON_MODULE(rdMolAlign) {
      \n\
      ARGUMENTS\n\
       - mol       molecule of interest\n\
-      - atomIds   List of atom ids to use a points for alingment - defaults to all atoms\n\
+      - alignParameter  parameter used for alignment\n\
+      - atomIds   List of atom ids to use a points for alignment - defaults to all atoms\n\
       - confIds   Ids of conformations to align - defaults to all conformers \n\
       - weights   Optionally specify weights for each of the atom pairs\n\
-      - reflect   if true reflect the conformation of the probe molecule\n\
-      - maxIters  maximum number of iterations used in mimizing the RMSD\n\
       - RMSlist   if provided, fills in the RMS values between the reference\n\
 		  conformation and the other aligned conformations\n\
+      \n\
+     Deprecated arguments:\n\
+      - reflect   if true reflect the conformation of the probe molecule\n\
+      - maxIters  maximum number of iterations used in mimizing the RMSD\n\
        \n\
     \n";
   python::def(
       "AlignMolConformers", RDKit::alignMolConfs,
-      (python::arg("mol"), python::arg("atomIds") = python::list(),
+      (python::arg("mol"), python::arg("alignParameter") = python::object(),
+       python::arg("atomIds") = python::list(),
        python::arg("confIds") = python::list(),
-       python::arg("weights") = python::list(), python::arg("reflect") = false,
-       python::arg("maxIters") = 50, python::arg("RMSlist") = python::object()),
+       python::arg("weights") = python::list(),
+       python::arg("RMSlist") = python::object(), python::arg("maxIters") = 50,
+       python::arg("reflect") = false),
       docString.c_str());
 
   docString =
@@ -804,16 +878,19 @@ BOOST_PYTHON_MODULE(rdMolAlign) {
                  boost::shared_ptr<RDKit::MolAlign::PyO3A> >(
       "O3A", "Open3DALIGN object", python::no_init)
       .def("Align", &RDKit::MolAlign::PyO3A::align, (python::arg("self")),
-           "aligns probe molecule onto reference molecule")
+           "aligns probe molecule onto reference "
+           "molecule")
       .def("Trans", &RDKit::MolAlign::PyO3A::trans, (python::arg("self")),
-           "returns the transformation which aligns probe molecule onto "
+           "returns the transformation which aligns "
+           "probe molecule onto "
            "reference molecule")
       .def("Score", &RDKit::MolAlign::PyO3A::score, (python::arg("self")),
            "returns the O3AScore of the alignment")
       .def("Matches", &RDKit::MolAlign::PyO3A::matches, (python::arg("self")),
            "returns the AtomMap as found by Open3DALIGN")
       .def("Weights", &RDKit::MolAlign::PyO3A::weights, (python::arg("self")),
-           "returns the weight vector as found by Open3DALIGN");
+           "returns the weight vector as found by "
+           "Open3DALIGN");
 
   docString =
       "Get an O3A object with atomMap and weights vectors to overlay\n\
