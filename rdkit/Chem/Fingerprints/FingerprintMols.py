@@ -20,8 +20,8 @@ Sample Usage:
 
 
 """
-
 from __future__ import print_function
+import argparse
 
 import getopt
 import sys
@@ -44,7 +44,7 @@ def message(msg):
 def GetRDKFingerprint(mol):
   """ uses default parameters """
   details = FingerprinterDetails()
-  return apply(FingerprintMol, (mol, ), details.__dict__)
+  return apply(FingerprintMol, (mol,), details.__dict__)
 
 
 def FoldFingerprintToTargetDensity(fp, **fpArgs):
@@ -224,7 +224,7 @@ def FingerprintsFromDetails(details, reportFreq=10):
     else:
       fps = apply(FingerprintsFromPickles, (data, idCol, smiCol), details.__dict__)
   elif dataSet and details.useSD:
-    fps = apply(FingerprintsFromMols, (dataSet, ), details.__dict__)
+    fps = apply(FingerprintsFromMols, (dataSet,), details.__dict__)
 
   if fps:
     if details.outFileName:
@@ -573,7 +573,105 @@ def ParseArgs(details=None):
   return details
 
 
+description = """
+If <fName> is provided and no tableName is specified (see below),
+data will be read from the text file <fName>.  Text files delimited
+with either commas (extension .csv) or tabs (extension .txt) are
+supported."""
+
+
+#     self.fingerprinter = Chem.RDKFingerprint
+#     self.outDbName = ''
+#     self.replaceTable = True
+#     self.molPklName = ''
+#     self.useSmiles = True
+
+
+def initParser():
+  """ Define the parser for command line arguments """
+  parser = argparse.ArgumentParser(description=description,
+                                   formatter_class=argparse.RawDescriptionHelpFormatter)
+
+  parser.add_argument('inFileName', metavar='fName', nargs='?', default='',
+                      help='Provide a filename to read data from file. ' +
+                      'Text files delimited with either commas (extension .csv) or ' +
+                      'tabs (extension .txt) are supported')
+  parser.add_argument('--maxMols', metavar='N', type=int, default=-1,
+                      help='sets the maximum number of molecules to be fingerprinted.')
+  parser.add_argument(
+    '--smilesName', default='SMILES',
+    help='sets the name of the SMILES column in the input database. ' + 'Default is %(default)s.')
+  parser.add_argument('--idName', metavar='ID', default='',
+                      help='sets the name of the id column in the input database. ' +
+                      'Defaults to be the name of the first db column (or *ID* for text files).')
+
+  group = parser.add_argument_group(title='Fingerprint options')
+  group.add_argument('--useMACCS', default=False, action='store_true',
+                     help='use the public MACCS keys to do the fingerprinting ' +
+                     '(instead of a daylight-type fingerprint)')
+  group.add_argument('--maxSize', metavar='val', default=2048, type=int, dest='fpSize',
+                     help='base size of the fingerprints to be generated. Default is %(default)s')
+  group.add_argument('--minSize', metavar='val', default=64, type=int,
+                     help='minimum size of the fingerprints to be generated ' +
+                     '(limits the amount of folding that happens). Default is %(default)s')
+  group.add_argument('--density', metavar='val', default=0.3, type=float, dest='tgtDensity',
+                     help='target bit density in the fingerprint. The fingerprint will be ' +
+                     'folded until this density is reached. Default is %(default)s')
+  group.add_argument('--maxPath', metavar='val', default=7, type=int,
+                     help='minimum path length to be included in fragment-based fingerprints. ' +
+                     'Default is %(default)s')
+  group.add_argument('--minPath', metavar='val', default=1, type=int,
+                     help='maximum path length to be included in fragment-based fingerprints. ' +
+                     'Default is %(default)s')
+  group.add_argument('--nBitsPerHash', metavar='val', default=2, type=int,
+                     dest='bitsPerHash',
+                     help='number of bits to be set in the output fingerprint for each fragment. ' +
+                     'Default is %(default)s')
+  group.add_argument('--discrim', default=False, action='store_true', dest='discrimHash',
+                     help='set to use of path-based discriminators to hash bits.')
+  group.add_argument('-V', default=False, action='store_true', dest='useValence',
+                     help='set to include valence information in the fingerprints.')
+  group.add_argument('-H', default=False, action='store_true', dest='useHs',
+                     help='set to include Hs in the fingerprints.')
+
+  group = parser.add_argument_group(title='File options')
+  group.add_argument('--useSD', default=False, action='store_true',
+                     help='Assume that the input file is an SD file, not a SMILES table.')
+  group.add_argument('-o', metavar='outFileName', dest='outFileName', default='',
+                     help='name of the output file (output will be a pickle file with one ' +
+                     'label,fingerprint entry for each molecule).')
+
+  group = parser.add_argument_group(title='Database options')
+  group.add_argument('-d', metavar='dbname', default='', dest='dbName',
+                     help='Set the name of the database from which to pull input ' +
+                     'molecule information. If output is going to a database, this ' +
+                     'will also be used for that unless the --outDbName option is used.')
+  group.add_argument(
+    '-t', metavar='tableName', default='',
+    help='Set the name of the database table from which to pull input molecule information.')
+  group.add_argument('--outTable', metavar='val', dest='outTableName', default='',
+                     help='name of the output db table used to ' +
+                     'store fingerprints. If this table already exists, it will be replaced.')
+  group.add_argument('--fpColName', metavar='val', default='AutoFragmentFP',
+                     help='name to use for the column which stores fingerprints ' +
+                     '(in pickled format) in the output db table. Default is %(default)s')
+  group.add_argument('--keepTable', default=True, dest='replaceTable', action='store_false',
+                     help='set to preserve the original table')
+  return parser
+
+
+def main():
+  """ Main loop for execution """
+  parser = initParser()
+  args = parser.parse_args()
+  details = setDetails(args)
+  print(args)
+
+
 if __name__ == '__main__':
+  main()
+  #   exit(0)
   message("This is FingerprintMols\n\n")
   details = ParseArgs()
+  print(details)
   FingerprintsFromDetails(details)
