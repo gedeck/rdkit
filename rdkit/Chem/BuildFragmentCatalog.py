@@ -175,12 +175,13 @@ def ScoreMolecules(suppl, catalog, maxPts=-1, actName='', acts=None, nActs=2, re
       else:
         act = acts[i - 1]
       fp = fpgen.GetFPForMol(mol, catalog)
-      obls.append([x for x in fp.GetOnBits()])
-      for j in range(nBits):
-        resTbl[j, 0, act] += 1
-      for id_ in obls[i - 1]:
-        resTbl[id_ - 1, 0, act] -= 1
-        resTbl[id_ - 1, 1, act] += 1
+      bits = list(fp.GetOnBits())
+      obls.append(bits)
+
+      bits = [b - 1 for b in bits]
+      resTbl[range(nBits), 0, act] += 1
+      resTbl[bits, 0, act] -= 1
+      resTbl[bits, 1, act] += 1
     else:
       obls.append([])
   return resTbl, obls
@@ -227,20 +228,17 @@ def ScoreFromLists(bitLists, suppl, catalog, maxPts=-1, actName='', acts=None, n
 
   progress = reportProgress(reportFreq, nPts, start=1)
   for i in range(1, nPts + 1):
+    progress()
     mol = next(suppl)
     if not acts:
       act = int(mol.GetProp(actName))
     else:
       act = acts[i - 1]
-    progress()
-    ids = set()
-    for id_ in bitLists[i - 1]:
-      ids.add(id_ - 1)
-    for j in range(nBits):
-      resTbl[j, 0, act] += 1
-    for id_ in ids:
-      resTbl[id_, 0, act] -= 1
-      resTbl[id_, 1, act] += 1
+
+    ids = list(set(ID - 1 for ID in bitLists[i - 1]))
+    resTbl[range(nBits), 0, act] += 1
+    resTbl[ids, 0, act] -= 1
+    resTbl[ids, 1, act] += 1
   return resTbl
 
 
