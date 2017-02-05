@@ -64,8 +64,12 @@
 """
 from __future__ import print_function
 
+import argparse
+from contextlib import contextmanager, closing
+from io import StringIO
 import os
 import sys
+import time
 
 import numpy
 
@@ -74,10 +78,13 @@ from rdkit.Chem import FragmentCatalog
 from rdkit.Dbase.DbConnection import DbConnect
 from rdkit.ML import InfoTheory
 from rdkit.six import next
-from rdkit.six.moves import cPickle
+from rdkit.six.moves import cPickle as pickle
+
+_MSGDEST = sys.stdout
 
 
-def message(msg, dest=sys.stdout):
+def message(msg, dest=None):
+  dest = dest or _MSGDEST
   dest.write(msg)
 
 
@@ -348,6 +355,7 @@ def reportProgress(reportFreq, nobjects=-1, start=0):
       else:
         message(fmtMsg.format(count, nobjects, msg))
     count += 1
+
   return counter
 
 
@@ -374,7 +382,9 @@ def ProcessGainsData(inF, delim=',', idCol=0, gainCol=1):
 
   """
   res = []
-  _ = inF.readline()
+  header = inF.readline().strip().split(delim)
+  gainCol = header.index('Gain')
+  idCol = header.index('id')
   for line in inF:
     splitL = line.strip().split(delim)
     res.append((splitL[idCol], float(splitL[gainCol])))
@@ -393,7 +403,7 @@ def ShowDetails(catalog, gains, nToDo=-1, outF=sys.stdout, idCol=0, gainCol=1, o
   for i in range(nToDo):
     id_ = int(gains[i][idCol])
     gain = float(gains[i][gainCol])
-    descr = catalog.GetFragDescription(id_)
+    descr = catalog.GetBitDescription(id_)
     if descr:
       outF.write('%s\n' % (outDelim.join((str(id_), descr, str(gain)))))
 
@@ -432,238 +442,206 @@ def SupplierFromDetails(details):
     suppl.reset()
   return suppl
 
-
-def Usage():
-  print("This is BuildFragmentCatalog")
-  print('usage error')
-  # print(__doc__)
-  sys.exit(-1)
-
-
-class RunDetails(object):
-  numMols = -1
-  doBuild = 0
-  doSigs = 0
-  doScore = 0
-  doGains = 0
-  doDetails = 0
-  catalogName = None
-  onBitsName = None
-  scoresName = None
-  gainsName = None
-  dbName = ''
-  tableName = None
-  detailsName = None
-  inFileName = None
-  fpName = None
-  minPath = 2
-  maxPath = 6
-  smiCol = 1
-  actCol = -1
-  nameCol = -1
-  hasTitle = 1
-  nActs = 2
-  nBits = -1
-  delim = ','
-  biasList = None
-  topN = -1
+# def Usage():
+#   print("This is BuildFragmentCatalog")
+#   print('usage error')
+#   # print(__doc__)
+#   sys.exit(-1)
 
 
-def ParseArgs(details):
-  import getopt
+def initParser():
+  """ Initialize the parser for the CLI """
+  parser = argparse.ArgumentParser(
+    description='command line utility for working with ' + 'FragmentCatalogs (CASE-type analysis)')
+  parser.add_argument('-n', metavar='maxNumMols', type=int, default=-1, dest='numMols',
+                      help='specify the maximum number of molecules to be processed')
+  parser.add_argument('-d', default='', dest='dbName', help='Database name')
+  group = parser.add_mutually_exclusive_group()
+  group.add_argument('-c', default=',', dest='delim', action='store_const', const=',',
+                     help='Read comma separated file')
+  group.add_argument('-s', dest='delim', action='store_const', const=' ',
+                     help='Read space separated file')
+  group.add_argument('-t', dest='delim', action='store_const', const='\t',
+                     help='Read tab separated file')
+  parser.add_argument('--build', default=False, action='store_true', dest='doBuild',
+                      help='build the catalog and OnBitLists (requires InData)')
+  parser.add_argument('--sigs', default=False, action='store_true', dest='doSigs')
+  parser.add_argument('--score', default=False, action='store_true', dest='doScore',
+                      help='score compounds (requires InData and a Catalog, can use OnBitLists)')
+  parser.add_argument('--gains', default=False, action='store_true', dest='doGains',
+                      help='calculate info gains (requires Scores)')
+  parser.add_argument(
+    '--details', default=False, action='store_true', dest='doDetails',
+    help='show details about high-ranking fragments ' + '(requires a Catalog and Gains)')
+  parser.add_argument('--catalog', metavar='filename', dest='catalogName', default=None,
+                      help='filename with the pickled catalog. ' +
+                      'If --build is provided, this file will be overwritten.')
+  parser.add_argument('--onbits', metavar='filename', dest='onBitsName', default=None,
+                      help='filename to hold the pickled OnBitLists. ' +
+                      'If -b is provided, this file will be overwritten.')
+  parser.add_argument('--scoresFile', metavar='filename', dest='scoresName', default=None,
+                      help='filename to hold the text score data. ' +
+                      'If -s is provided, this file will be overwritten')
+  parser.add_argument('--gainsFile', metavar='filename', dest='gainsName', default=None,
+                      help='filename to hold the text gains data. ' +
+                      'If -g is provided, this file will be overwritten')
+  parser.add_argument('--detailsFile', metavar='filename', dest='detailsName', default=None,
+                      help='filename to hold the text details data. ' +
+                      'If -d is provided, this file will be overwritten.')
+  parser.add_argument('--fpFile', metavar='filename', dest='fpName', default=None)
+  parser.add_argument('--minPath', metavar='N', type=int, default=2,
+                      help='specify the minimum length for a path')
+  parser.add_argument('--maxPath', metavar='N', type=int, default=6,
+                      help='specify the maximum length for a path')
+  parser.add_argument(
+    '--smiCol', metavar='N', default=1, type=intOrString,
+    help='specify which column in the input data file contains SMILES (default %(default)s')
+  parser.add_argument(
+    '--actCol', metavar='N', default=-1, type=intOrString,
+    help='specify which column in the input data file contains activities (default %(default)s')
+  parser.add_argument('--nameCol', metavar='N', default=-1, type=intOrString)
+  parser.add_argument('--nActs', metavar='N', default=2, type=int,
+                      help='specify the number of possible activity values')
+  parser.add_argument('--nBits', metavar='N', default=-1, type=int,
+                      help='specify the maximum number of bits to show details for')
+  parser.add_argument('--biasList', metavar='LIST', default=None, type=toTuple)
+  parser.add_argument('--topN', metavar='N', default=-1, type=int)
+  parser.add_argument('--noTitle', default=True, dest='hasTitle', action='store_false')
+  parser.add_argument('input', default=None, help='File or table name')
+  return parser
+
+
+def intOrString(value):
+  """ If possible convert the value to int, otherwise leave as string """
   try:
-    args, extras = getopt.getopt(sys.argv[1:], 'n:d:cst',
-                                 ['catalog=', 'onbits=', 'scoresFile=', 'gainsFile=',
-                                  'detailsFile=', 'fpFile=', 'minPath=', 'maxPath=', 'smiCol=',
-                                  'actCol=', 'nameCol=', 'nActs=', 'nBits=', 'biasList=', 'topN=',
-                                  'build', 'sigs', 'gains', 'details', 'score', 'noTitle'])
-  except Exception:
-    sys.stderr.write('Error parsing command line:\n')
-    import traceback
-    traceback.print_exc()
-    Usage()
-  for arg, val in args:
-    if arg == '-n':
-      details.numMols = int(val)
-    elif arg == '-c':
-      details.delim = ','
-    elif arg == '-s':
-      details.delim = ' '
-    elif arg == '-t':
-      details.delim = '\t'
-    elif arg == '-d':
-      details.dbName = val
-    elif arg == '--build':
-      details.doBuild = 1
-    elif arg == '--score':
-      details.doScore = 1
-    elif arg == '--gains':
-      details.doGains = 1
-    elif arg == '--sigs':
-      details.doSigs = 1
-    elif arg == '-details':
-      details.doDetails = 1
-    elif arg == '--catalog':
-      details.catalogName = val
-    elif arg == '--onbits':
-      details.onBitsName = val
-    elif arg == '--scoresFile':
-      details.scoresName = val
-    elif arg == '--gainsFile':
-      details.gainsName = val
-    elif arg == '--detailsFile':
-      details.detailsName = val
-    elif arg == '--fpFile':
-      details.fpName = val
-    elif arg == '--minPath':
-      details.minPath = int(val)
-    elif arg == '--maxPath':
-      details.maxPath = int(val)
-    elif arg == '--smiCol':
-      try:
-        details.smiCol = int(val)
-      except ValueError:
-        details.smiCol = val
-    elif arg == '--actCol':
-      try:
-        details.actCol = int(val)
-      except ValueError:
-        details.actCol = val
-    elif arg == '--nameCol':
-      try:
-        details.nameCol = int(val)
-      except ValueError:
-        details.nameCol = val
-    elif arg == '--nActs':
-      details.nActs = int(val)
-    elif arg == '--nBits':
-      details.nBits = int(val)
-    elif arg == '--noTitle':
-      details.hasTitle = 0
-    elif arg == '--biasList':
-      details.biasList = tuple(eval(val))
-    elif arg == '--topN':
-      details.topN = int(val)
-    elif arg == '-h':
-      Usage()
-      sys.exit(0)
-    else:
-      Usage()
-  if len(extras):
-    if details.dbName:
-      details.tableName = extras[0]
-    else:
-      details.inFileName = extras[0]
+    return int(value)
+  except ValueError:
+    return value
+
+
+def toTuple(value):
+  """ Evaluate the value and assign to tuple """
+  return tuple(eval(value))
+
+
+def validateArgs(args, parser):
+  """ Do some consistency checks """
+  if args.dbName:
+    args.tableName = args.input
   else:
-    Usage()
+    args.inFileName = args.input
 
 
-if __name__ == '__main__':
-  import time
-  details = RunDetails()
-  ParseArgs(details)
-  from io import StringIO
+@contextmanager
+def timeIt():
+  t1 = time.time()
+  yield
+  message("\tThat took %.2f seconds.\n" % (time.time() - t1))
+
+
+def processDetails(details, parser):
   suppl = SupplierFromDetails(details)
+
+  if details.doBuild or details.doScore or details.doGains:
+    if not suppl:
+      parser.error("We require inData to generate a catalog\n")
 
   cat = None
   obls = None
   if details.doBuild:
-    if not suppl:
-      message("We require inData to generate a catalog\n")
-      sys.exit(-2)
     message("Building catalog\n")
-    t1 = time.time()
-    cat = BuildCatalog(suppl, maxPts=details.numMols, minPath=details.minPath,
-                       maxPath=details.maxPath)
-    t2 = time.time()
-    message("\tThat took %.2f seconds.\n" % (t2 - t1))
+    with timeIt():
+      cat = BuildCatalog(suppl, maxPts=details.numMols, minPath=details.minPath,
+                         maxPath=details.maxPath)
     if details.catalogName:
       message("Dumping catalog data\n")
-      cPickle.dump(cat, open(details.catalogName, 'wb+'))
+      with open(details.catalogName, 'wb+') as f:
+        pickle.dump(cat, f)
+
   elif details.catalogName:
     message("Loading catalog\n")
-    cat = cPickle.load(open(details.catalogName, 'rb'))
+    with open(details.catalogName, 'rb') as f:
+      cat = pickle.load(f)
     if details.onBitsName:
       try:
-        obls = cPickle.load(open(details.onBitsName, 'rb'))
+        with open(details.onBitsName, 'rb') as f:
+          obls = pickle.load(f)
       except Exception:
         obls = None
-      else:
-        if len(obls) < (inD.count('\n') - 1):
-          obls = None
+#       else:
+#         if len(obls) < (inD.count('\n') - 1):
+#           obls = None
   scores = None
   if details.doScore:
-    if not suppl:
-      message("We require inData to score molecules\n")
-      sys.exit(-2)
     if not cat:
-      message("We require a catalog to score molecules\n")
-      sys.exit(-2)
+      parser.error("We require a catalog to score molecules\n")
     message("Scoring compounds\n")
     if not obls or len(obls) < details.numMols:
       scores, obls = ScoreMolecules(suppl, cat, maxPts=details.numMols, actName=details.actCol,
                                     nActs=details.nActs)
       if details.scoresName:
-        cPickle.dump(scores, open(details.scoresName, 'wb+'))
+        with open(details.scoresName, 'wb+') as f:
+          pickle.dump(scores, f)
       if details.onBitsName:
-        cPickle.dump(obls, open(details.onBitsName, 'wb+'))
+        with open(details.onBitsName, 'wb+') as f:
+          pickle.dump(obls, f)
     else:
       scores = ScoreFromLists(obls, suppl, cat, maxPts=details.numMols, actName=details.actCol,
                               nActs=details.nActs)
   elif details.scoresName:
-    scores = cPickle.load(open(details.scoresName, 'rb'))
+    scores = pickle.load(open(details.scoresName, 'rb'))
 
   if details.fpName and os.path.exists(details.fpName) and not details.doSigs:
     message("Reading fingerprints from file.\n")
-    fps = cPickle.load(open(details.fpName, 'rb'))
+    with open(details.fpName, 'rb') as f:
+      fps = pickle.load(f)
   else:
     fps = []
   gains = None
   if details.doGains:
-    if not suppl:
-      message("We require inData to calculate gains\n")
-      sys.exit(-2)
     if not (cat or fps):
-      message("We require either a catalog or fingerprints to calculate gains\n")
-      sys.exit(-2)
+      parser.error("We require either a catalog or fingerprints to calculate gains\n")
     message("Calculating Gains\n")
-    t1 = time.time()
-    if details.fpName:
-      collectFps = 1
-    else:
-      collectFps = 0
-    if not fps:
-      gains, fps = CalcGains(suppl, cat, topN=details.topN, actName=details.actCol,
-                             nActs=details.nActs, biasList=details.biasList, collectFps=collectFps)
+    with timeIt():
       if details.fpName:
-        message("Writing fingerprint file.\n")
-        tmpF = open(details.fpName, 'wb+')
-        cPickle.dump(fps, tmpF, 1)
-        tmpF.close()
-    else:
-      gains = CalcGainsFromFps(suppl, fps, topN=details.topN, actName=details.actCol,
-                               nActs=details.nActs, biasList=details.biasList)
-    t2 = time.time()
-    message("\tThat took %.2f seconds.\n" % (t2 - t1))
+        collectFps = 1
+      else:
+        collectFps = 0
+      if not fps:
+        gains, fps = CalcGains(suppl, cat, topN=details.topN, actName=details.actCol,
+                               nActs=details.nActs, biasList=details.biasList,
+                               collectFps=collectFps)
+        if details.fpName:
+          message("Writing fingerprint file.\n")
+          with open(details.fpName, 'wb+') as f:
+            pickle.dump(fps, f, 1)
+      else:
+        gains = CalcGainsFromFps(suppl, fps, topN=details.topN, actName=details.actCol,
+                                 nActs=details.nActs, biasList=details.biasList)
     if details.gainsName:
-      outF = open(details.gainsName, 'w+')
-      OutputGainsData(outF, gains, cat, nActs=details.nActs)
+      with open(details.gainsName, 'w+') as f:
+        OutputGainsData(f, gains, cat, nActs=details.nActs)
   else:
     if details.gainsName:
-      inF = open(details.gainsName, 'r')
-      gains = ProcessGainsData(inF)
+      with open(details.gainsName, 'r') as f:
+        gains = ProcessGainsData(f)
 
   if details.doDetails:
     if not cat:
-      message("We require a catalog to get details\n")
-      sys.exit(-2)
-    if not gains:
-      message("We require gains data to get details\n")
-      sys.exit(-2)
-    io = StringIO()
-    io.write('id,SMILES,gain\n')
-    ShowDetails(cat, gains, nToDo=details.nBits, outF=io)
-    if details.detailsName:
-      open(details.detailsName, 'w+').write(io.getvalue())
-    else:
-      sys.stderr.write(io.getvalue())
+      parser.error("We require a catalog to get details\n")
+    if gains is None:
+      parser.error("We require gains data to get details\n")
+    with closing(StringIO()) as io:
+      io.write('id,SMILES,gain\n')
+      ShowDetails(cat, gains, nToDo=details.nBits, outF=io)
+      if details.detailsName:
+        with open(details.detailsName, 'w+') as f:
+          f.write(io.getvalue())
+      else:
+        sys.stderr.write(io.getvalue())
+
+if __name__ == '__main__':
+  parser = initParser()
+  args = parser.parse_args()
+  validateArgs(args, parser)
+  processDetails(args, parser)

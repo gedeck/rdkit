@@ -7,14 +7,20 @@
 #  which is included in the file license.txt, found at the root
 #  of the RDKit source tree.
 #
+from contextlib import contextmanager
 import io
 import os
+import sys
+import shutil
+import tempfile
 import unittest
 
 from rdkit import Chem
 from rdkit import RDConfig
 from rdkit.Chem import FragmentCatalog, BuildFragmentCatalog
+from rdkit.six import StringIO
 from rdkit.six.moves import cPickle
+
 
 doLong = False
 
@@ -118,23 +124,23 @@ class TestCase(unittest.TestCase):
     #  text representations (i.e. there is nothing to distinguish
     #  between 'CC<-O>CC' and 'CCC<-O>C').
     # This ought to eventually be cleaned up.
-    descrs = [(0, 'C<-O>C', 1, (34, )),
+    descrs = [(0, 'C<-O>C', 1, (34,)),
               (1, 'CC', 1, ()),
-              (2, 'C<-O>CC', 2, (34, )),
+              (2, 'C<-O>CC', 2, (34,)),
               (3, 'CCC', 2, ()),
               (4, 'C=C', 1, ()),
               (5, 'C=CC', 2, ()),
-              (6, 'C<-O>=C', 1, (34, )),
-              (7, 'C<-O>=CC', 2, (34, )),
-              (8, 'CC<-O>C', 2, (34, )),
-              (9, 'C=C<-O>C', 2, (34, )),
-              (10, 'C<-O>CCC', 3, (34, )),
-              (11, 'CC<-O>CC', 3, (34, )),
+              (6, 'C<-O>=C', 1, (34,)),
+              (7, 'C<-O>=CC', 2, (34,)),
+              (8, 'CC<-O>C', 2, (34,)),
+              (9, 'C=C<-O>C', 2, (34,)),
+              (10, 'C<-O>CCC', 3, (34,)),
+              (11, 'CC<-O>CC', 3, (34,)),
               (12, 'C=CCC', 3, ()),
               (13, 'CC=CC', 3, ()),
-              (14, 'C<-O>=CCC', 3, (34, )),
-              (15, 'CC=C<-O>C', 3, (34, )),
-              (16, 'C=CC<-O>', 2, (34, )), ]
+              (14, 'C<-O>=CCC', 3, (34,)),
+              (15, 'CC=C<-O>C', 3, (34,)),
+              (16, 'C=CC<-O>', 2, (34,)), ]
     for i in range(len(descrs)):
       ID, d, order, ids = descrs[i]
       descr = self.fragCat.GetBitDescription(ID)
@@ -195,7 +201,7 @@ class TestCase(unittest.TestCase):
 
     # new InfoGain ranking:
     bitInfo, _ = BuildFragmentCatalog.CalcGains(suppl, cat, topN=10, acts=self.list2Acts,
-                                                reportFreq=20, biasList=(1, ))
+                                                reportFreq=20, biasList=(1,))
     entry = bitInfo[0]
     self.assertEqual(int(entry[0]), 0)
     self.assertEqual(cat.GetBitDescription(int(entry[0])), 'C<-O>C')
@@ -241,6 +247,79 @@ class TestCase(unittest.TestCase):
     self.assertEqual(fp[0], 0)
     self.assertEqual(fp[1], 1)
 
+  def _executeScript(self, parser, args):
+    oldMsgDest = BuildFragmentCatalog._MSGDEST
+    try:
+      with outputRedirect() as (out, err):
+        BuildFragmentCatalog._MSGDEST = out
+        args = parser.parse_args(args.split())
+        BuildFragmentCatalog.validateArgs(args, parser)
+        BuildFragmentCatalog.processDetails(args, parser)
+    finally:
+      BuildFragmentCatalog._MSGDEST = oldMsgDest
+    return out.getvalue(), err.getvalue()
+
+  def test_BuildFragmentCatalogCLI(self):
+    inFileName = os.path.join(os.path.dirname(__file__), 'test_data', 'fragmentCatalog.csv')
+    testdir = tempfile.mkdtemp()
+    try:
+      catalog = os.path.join(testdir, 'catalog')
+      scores = os.path.join(testdir, 'scores')
+      onbits = os.path.join(testdir, 'onbits')
+      gains = os.path.join(testdir, 'gains')
+      fingerprints = os.path.join(testdir, 'fingerprints')
+      results = os.path.join(testdir, 'details')
+
+      commonArgs = '-c --smiCol 0 --nameCol 0 --actCol 0 {0}'.format(inFileName)
+      parser = BuildFragmentCatalog.initParser()
+      self._executeScript(parser, '--build --catalog {0} {1}'.format(catalog, commonArgs))
+      self.assertTrue(os.path.isfile(catalog))
+
+      # Score requires a catalog
+      with self.assertRaises(SystemExit):
+        self._executeScript(parser, '--score {0}'.format(commonArgs))
+
+      # Scoring and creation of scores and onbits files
+      commonArgs = '--catalog {0} {1}'.format(catalog, commonArgs)
+      commonArgs = '--scoresFile {0} {1}'.format(scores, commonArgs)
+      commonArgs = '--onbits {0} {1}'.format(onbits, commonArgs)
+
+      self._executeScript(parser, '--score {0}'.format(commonArgs))
+      self.assertTrue(os.path.isfile(scores))
+      self.assertTrue(os.path.isfile(onbits))
+
+      # if onbits files exists, we get scores differently
+      self._executeScript(parser, '--score {0}'.format(commonArgs))
+
+      # Gain calculation
+      commonArgs = '--gainsFile {0} {1}'.format(gains, commonArgs)
+      commonArgs = '--fpFile {0} {1}'.format(fingerprints, commonArgs)
+      self._executeScript(parser, '--gains {0}'.format(commonArgs))
+      self.assertTrue(os.path.isfile(gains))
+      self.assertTrue(os.path.isfile(fingerprints))
+
+      # If the fingerprint file exists, we read it
+      self._executeScript(parser, '--gains {0}'.format(commonArgs))
+
+      # Finally details
+      commonArgs = '--detailsFile {0} {1}'.format(results, commonArgs)
+      self._executeScript(parser, '--details {0}'.format(commonArgs))
+      self.assertTrue(os.path.isfile(results))
+
+    finally:
+      shutil.rmtree(testdir)
+
+
+@contextmanager
+def outputRedirect():
+  """ Redirect standard output and error to String IO and return """
+  try:
+    _stdout, _stderr = sys.stdout, sys.stderr
+    sys.stdout = sStdout = StringIO()
+    sys.stderr = sStderr = StringIO()
+    yield (sStdout, sStderr)
+  finally:
+    sys.stdout, sys.stderr = _stdout, _stderr
 
 if __name__ == '__main__':  # pragma: nocover
   import argparse
