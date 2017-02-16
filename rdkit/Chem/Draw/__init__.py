@@ -110,11 +110,18 @@ def MolToImage(mol, size=(300, 300), kekulize=True, wedgeBonds=True, fitImage=Fa
     options.selectColor = color
 
   drawer = MolDrawing(canvas=canvas, drawingOptions=options)
-
   if kekulize:
     from rdkit import Chem
+    drawlabels = [None] * mol.GetNumAtoms()
+    for i, atom in enumerate(mol.GetAtoms()):
+      if atom.HasProp('drawlabel'):
+        drawlabels[i] = atom.GetProp('drawlabel')
     mol = Chem.Mol(mol.ToBinary())
     Chem.Kekulize(mol)
+    for atom, label in zip(mol.GetAtoms(), drawlabels):
+      if label is None:
+        continue
+      atom.SetProp('drawlabel', label)
 
   if not mol.GetNumConformers():
     from rdkit.Chem import AllChem

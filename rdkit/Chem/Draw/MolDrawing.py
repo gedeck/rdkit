@@ -406,11 +406,16 @@ class MolDrawing(object):
       iso = atom.GetIsotope()
       labelIt = (not self.drawingOptions.noCarbonSymbols or iso or atom.GetAtomicNum() != 6 or
                  atom.GetFormalCharge() != 0 or atom.GetNumRadicalElectrons() or
-                 includeAtomNumbers or atom.HasProp('molAtomMapNumber') or atom.GetDegree() == 0)
+                 includeAtomNumbers or atom.HasProp('molAtomMapNumber') or
+                 atom.HasProp('drawlabel') or atom.GetDegree() == 0)
       orient = ''
       if labelIt:
         baseOffset = 0
-        if includeAtomNumbers:
+
+        if atom.HasProp('drawlabel'):
+          symbol = atom.GetProp('drawlabel')
+
+        elif includeAtomNumbers:
           symbol = str(atom.GetIdx())
           symbolLength = len(symbol)
         else:
