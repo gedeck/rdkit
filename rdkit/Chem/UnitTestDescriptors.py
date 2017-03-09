@@ -11,16 +11,19 @@
 
 """
 from __future__ import print_function
-from rdkit import RDConfig
-import unittest, os.path
+
 import io
-from rdkit.six.moves import cPickle
-from rdkit import Chem
-from rdkit.Chem import Descriptors
-from rdkit.Chem import AllChem
-from rdkit.Chem import rdMolDescriptors
-from rdkit.Chem import Lipinski
+import os
+import unittest
+
 import numpy as np
+from rdkit import Chem
+from rdkit import RDConfig
+from rdkit.Chem import AllChem
+from rdkit.Chem import Descriptors
+from rdkit.Chem import Lipinski
+from rdkit.Chem import rdMolDescriptors
+from rdkit.six.moves import cPickle
 
 
 def feq(n1, n2, tol=1e-4):
@@ -30,7 +33,7 @@ def feq(n1, n2, tol=1e-4):
 class TestCase(unittest.TestCase):
 
   def testGithub1287(self):
-    smis = ('CCC', )
+    smis = ('CCC',)
     for smi in smis:
       m = Chem.MolFromSmiles(smi)
       self.assertTrue(m)
@@ -69,7 +72,7 @@ class TestCase(unittest.TestCase):
                                ("[H-1]", "H-"),
                                ("[CH2]", "CH2"),
                                ("[He-2]", "He-2"),
-                               ("[U+3]", "U+3"), ):
+                               ("[U+3]", "U+3"),):
       mol = Chem.MolFromSmiles(smiles)
       actual = AllChem.CalcMolFormula(mol)
       self.assertEqual(actual, expected)
@@ -113,11 +116,18 @@ class TestCase(unittest.TestCase):
          292, 41, 20, 1852, 5642, 31, 9, 1, 2, 3060, 1750])
     fn = os.path.join(RDConfig.RDCodeDir, 'Chem', 'test_data', 'aromat_regress.txt')
     ms = [x for x in Chem.SmilesMolSupplier(fn, delimiter='\t')]
-    vs = np.zeros((42, ), np.int32)
+    vs = np.zeros((42,), np.int32)
     for m in ms:
       vs += rdMolDescriptors.MQNs_(m)
     self.assertFalse(False in (vs == tgt))
 
-# - - - - -
+  def testGithub1362(self):
+    descriptors = [d[0] for d in Descriptors._descList]
+    self.assertIn('fr_COO', descriptors)
+
+    m = Chem.MolFromSmiles('CCC(=O)O')
+    self.assertEqual(Descriptors.fr_COO(m), 1)
+
+
 if __name__ == '__main__':
   unittest.main()
