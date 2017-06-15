@@ -11,14 +11,16 @@
 """ Import all RDKit chemistry modules
 
 """
-from rdkit import rdBase
-from rdkit import RDConfig
+import warnings
+from collections import namedtuple
+
+import numpy
+
 from rdkit import DataStructs
-from rdkit.Geometry import rdGeometry
+from rdkit import ForceField
+from rdkit import RDConfig
+from rdkit import rdBase
 from rdkit.Chem import *
-from rdkit.Chem.rdPartialCharges import *
-from rdkit.Chem.rdDepictor import *
-from rdkit.Chem.rdForceFieldHelpers import *
 from rdkit.Chem.ChemicalFeatures import *
 from rdkit.Chem.rdDistGeom import *
 # from rdkit.Chem.rdMolAlign import *
@@ -26,26 +28,32 @@ from rdkit.Chem.rdDistGeom import *
 from rdkit.Chem.rdMolTransforms import *
 from rdkit.Chem.rdShapeHelpers import *
 from rdkit.Chem.rdChemReactions import *
+from rdkit.Chem.rdDepictor import *
+from rdkit.Chem.rdDistGeom import *
+from rdkit.Chem.rdForceFieldHelpers import *
+from rdkit.Chem.rdMolAlign import *
+from rdkit.Chem.rdMolDescriptors import *
+from rdkit.Chem.rdMolTransforms import *
+from rdkit.Chem.rdPartialCharges import *
 from rdkit.Chem.rdReducedGraphs import *
+from rdkit.Chem.rdShapeHelpers import *
+from rdkit.Chem.rdqueries import *
+from rdkit.Geometry import rdGeometry
+from rdkit.RDLogger import logger
+
 try:
   from rdkit.Chem.rdSLNParse import *
 except ImportError:
   pass
-from rdkit.Chem.rdMolDescriptors import *
-from rdkit.Chem.rdqueries import *
-from rdkit import ForceField
+
 Mol.Compute2DCoords = Compute2DCoords
 Mol.ComputeGasteigerCharges = ComputeGasteigerCharges
-import numpy, os
-from rdkit.RDLogger import logger
 logger = logger()
-import warnings
 
 
 def TransformMol(mol, tform, confId=-1, keepConfs=False):
   """  Applies the transformation (usually a 4x4 double matrix) to a molecule
   if keepConfs is False then all but that conformer are removed
-
   """
   refConf = mol.GetConformer(confId)
   TransformConformer(refConf, tform)
@@ -53,9 +61,9 @@ def TransformMol(mol, tform, confId=-1, keepConfs=False):
     if confId == -1:
       confId = 0
     allConfIds = [c.GetId() for c in mol.GetConformers()]
-    for id in allConfIds:
-      if not id == confId:
-        mol.RemoveConformer(id)
+    for cid in allConfIds:
+      if not cid == confId:
+        mol.RemoveConformer(cid)
     # reset the conf Id to zero since there is only one conformer left
     mol.GetConformer(confId).SetId(0)
 
@@ -77,9 +85,8 @@ def ComputeMolVolume(mol, confId=-1, gridSpacing=0.2, boxMargin=2.0):
   conf = mol.GetConformer(confId)
   CanonicalizeConformer(conf)
   box = ComputeConfBox(conf)
-  sideLen = (box[1].x - box[0].x + 2 * boxMargin, \
-              box[1].y - box[0].y + 2 * boxMargin, \
-              box[1].z - box[0].z + 2 * boxMargin)
+  sideLen = (box[1].x - box[0].x + 2 * boxMargin, box[1].y - box[0].y + 2 * boxMargin,
+             box[1].z - box[0].z + 2 * boxMargin)
   shape = rdGeometry.UniformGrid3D(sideLen[0], sideLen[1], sideLen[2], spacing=gridSpacing)
   EncodeShape(mol, shape, confId, ignoreHs=False, vdwScale=1.0)
   voxelVol = gridSpacing ** 3
@@ -87,6 +94,7 @@ def ComputeMolVolume(mol, confId=-1, gridSpacing=0.2, boxMargin=2.0):
   voxels = [1 for x in occVect if x == 3]
   vol = voxelVol * len(voxels)
   return vol
+
 
 
 def GenerateDepictionMatching2DStructure(mol, reference, confId=-1, referencePattern=None,
@@ -168,7 +176,7 @@ def GenerateDepictionMatching3DStructure(mol, reference, confId=-1, **kwargs):
   Compute2DCoordsMimicDistmat(mol, dm, **kwargs)
 
 
-def EnumerateLibraryFromReaction(reaction, sidechainSets):
+def EnumerateLibraryFromReaction(reaction, sidechainSets, returnReactants=False):
   """ Returns a generator for the virtual library defined by
    a reaction and a sequence of sidechain sets
 
@@ -214,10 +222,14 @@ def EnumerateLibraryFromReaction(reaction, sidechainSets):
       else:
         yield [item]
 
+  ProductReactants = namedtuple('ProductReactants', 'products,reactants')
   for chains in _combiEnumerator(sidechainSets):
     prodSets = reaction.RunReactants(chains)
     for prods in prodSets:
-      yield prods
+      if returnReactants:
+        yield ProductReactants(prods, chains)
+      else:
+        yield prods
 
 
 def AssignBondOrdersFromTemplate(refmol, mol):
@@ -230,6 +242,7 @@ def AssignBondOrdersFromTemplate(refmol, mol):
 
     An example, start by generating a template from a SMILES
     and read in the PDB structure of the molecule
+    >>> import os
     >>> from rdkit.Chem import AllChem
     >>> template = AllChem.MolFromSmiles("CN1C(=NC(C1=O)(c2ccccc2)c3ccccc3)N")
     >>> mol = AllChem.MolFromPDBFile(os.path.join(RDConfig.RDCodeDir, 'Chem',
@@ -305,16 +318,16 @@ def AssignBondOrdersFromTemplate(refmol, mol):
   return mol2
 
 
-#------------------------------------
+# ------------------------------------
 #
 #  doctest boilerplate
 #
-def _test():
-  import doctest, sys
-  return doctest.testmod(sys.modules["__main__"])
-
-
-if __name__ == '__main__':
+def _runDoctests(verbose=None):  # pragma: nocover
   import sys
-  failed, tried = _test()
+  import doctest
+  failed, _ = doctest.testmod(optionflags=doctest.ELLIPSIS, verbose=verbose)
   sys.exit(failed)
+
+
+if __name__ == '__main__':  # pragma: nocover
+  _runDoctests()
